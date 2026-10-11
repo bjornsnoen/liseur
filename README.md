@@ -81,20 +81,14 @@ servers and dictionary sources you configure. See the
 
 <p align="center">
   <a href="https://play.google.com/store/apps/details?id=com.chmouel.liseur">
-    <img alt="Get it on Google Play" src="https://appure.io/badges/playstore/en.svg" height="80" />
+    <img alt="Get it on Google Play" src="https://appure.io/badges/playstore/en.svg" height="80" width="180" />
   </a>
   <a href="https://f-droid.org/en/packages/com.chmouel.liseur/">
     <img src="https://f-droid.org/badge/get-it-on.png" alt="Get it on F-Droid" height="80" />
   </a>
-</p>
-<p align="center">
   <a href="https://github.com/chmouel/liseur/releases">
     <img src="https://raw.githubusercontent.com/Kunzisoft/Github-badge/main/get-it-on-github.png"
          alt="Get it on GitHub" height="80" />
-  </a>
-  <a href="https://apps.obtainium.imranr.dev/redirect.html?r=obtainium://add/https://github.com/chmouel/liseur">
-    <img src="https://raw.githubusercontent.com/ImranR98/Obtainium/main/assets/graphics/badge_obtainium.png"
-         alt="Get it on Obtainium" height="80" />
   </a>
 </p>
 
