@@ -7,10 +7,11 @@ EMULATOR ?= $(if $(wildcard $(SDK_DIR)/emulator/emulator),$(SDK_DIR)/emulator/em
 SCRCPY ?= scrcpy
 AVD ?= liseur_phone_api36
 SERIAL ?= emulator-5554
-PHONE ?= $(shell $(ADB) devices 2>/dev/null | grep -v emulator | awk 'NR>1 && $$2=="device" {print $$1; exit}')
+# Tab-separated: a wireless serial can hold spaces, as in "adb-… (2)._adb-tls-connect._tcp".
+PHONE ?= $(shell $(ADB) devices 2>/dev/null | grep -v emulator | awk -F'\t' 'NR>1 && $$2=="device" {print $$1; exit}')
 LOCALE ?=
 ADB_TARGET := -s $(SERIAL)
-ADB_PHONE_TARGET := -s $(PHONE)
+ADB_PHONE_TARGET := -s '$(PHONE)'
 PACKAGE := com.chmouel.liseur
 ACTIVITY := $(PACKAGE)/.MainActivity
 # Which build the device targets install. `play` carries Gemini read-aloud
