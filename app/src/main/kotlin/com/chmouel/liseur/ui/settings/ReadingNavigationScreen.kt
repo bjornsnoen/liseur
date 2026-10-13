@@ -150,13 +150,6 @@ fun ReadingNavigationScreen(
                         checked = settings.scrollMode,
                         onCheckedChange = onScrollMode,
                     )
-                    RowDivider()
-                    SwitchRow(
-                        title = stringResource(R.string.settings_lock_footer),
-                        subtitle = stringResource(R.string.settings_lock_footer_detail),
-                        checked = settings.lockFooterOn,
-                        onCheckedChange = onLockFooter,
-                    )
                 }
 
                 // The e-ink rows are about the panel the book is drawn
@@ -269,6 +262,13 @@ fun ReadingNavigationScreen(
                         checked = settings.pinchToResize && !pinchOffForEInk,
                         onCheckedChange = onPinchToResize,
                         enabled = !pinchOffForEInk,
+                    )
+                    RowDivider()
+                    SwitchRow(
+                        title = stringResource(R.string.settings_lock_footer),
+                        subtitle = stringResource(R.string.settings_lock_footer_detail),
+                        checked = settings.lockFooterOn,
+                        onCheckedChange = onLockFooter,
                     )
                 }
             }
