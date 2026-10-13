@@ -1824,7 +1824,13 @@ reader behavior.
   (OpenRouter's `pricing`, dollars per token) shows the input and output
   price per million tokens under each one.
 - "Translate the page from here" in the sheet translates the book in
-  place (reflowable books only). `PageTranslation` walks sentences from
+  place (reflowable books only). The More menu (⋮) in the reader's top
+  bar offers the same action from the current page, next to Read aloud
+  from here when translation is configured: it starts at once in the
+  languages the sheet would show (`TranslateFeature.pageLanguages`) and
+  is hidden while translation needs setting up. Use the translation sheet
+  from a text selection to configure the service.
+  `PageTranslation` walks sentences from
   the selection with `PublicationUtteranceCursor`, keeps a bounded number
   ahead of the last walked sentence on screen or already passed, restarts
   the walk when the reader jumps elsewhere, and asks one sentence at a

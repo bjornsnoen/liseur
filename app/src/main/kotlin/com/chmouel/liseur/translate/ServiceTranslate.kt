@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import java.util.Locale
 
 /**
  * Translation with the [services] the build offers, the device's first.
@@ -162,6 +163,16 @@ internal class ServiceTranslate(
 
             override fun close() = bound.run.close()
         }
+    }
+
+    override suspend fun pageLanguages(declared: List<String>, app: Locale): PageTranslationModes.Mode? {
+        val s = settings.settings.first()
+        val service = resolve(s)
+        service.refresh()
+        val source = TranslationLanguages.source(declared)
+        val target = TranslationLanguages.target(s.translationTarget, app)
+        val step = TranslationStep.languages(service.configured.first(), service.detectsLanguage, source, target, service.targets(source))
+        return PageTranslationModes.Mode(source, target).takeIf { step == TranslationStep.Translate }
     }
 
     private fun resolve(s: AppSettings): TranslationService {

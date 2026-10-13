@@ -41,9 +41,14 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.List
+import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.outlined.BookmarkBorder
+import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Translate
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -3868,8 +3873,8 @@ fun ReaderScreen(
                             )
                         }
                         // The bar owns this corner while it is up, ribbon and
-                        // all, so it owns the bookmark with it. Last of the
-                        // actions to keep the mark where the ribbon hangs.
+                        // all, so it owns the bookmark with it. Next to the
+                        // corner, with only the overflow past it.
                         IconButton(onClick = ::toggleBookmarkHere) {
                             Icon(
                                 if (bookmarked) {
@@ -3885,6 +3890,77 @@ fun ReaderScreen(
                                     },
                                 ),
                             )
+                        }
+                        val uiLocale = LocalConfiguration.current.locales[0]
+                        val translateFromHere: (() -> Unit)? =
+                            if (translate.isAvailable && translateReady && !pageTranslated && reflowableText) {
+                                {
+                                    effectScope.launch {
+                                        val nav = navigatorNow ?: return@launch
+                                        val locator = ExactLocatorAnchor.capture(nav, nav.currentLocator.value)
+                                        val languages = translate.pageLanguages(publication.metadata.languages, uiLocale)
+                                        if (languages != null) {
+                                            startTranslatingPage(nav, locator, languages.source, languages.target)
+                                            return@launch
+                                        }
+                                        // The sheet asks for what is missing, then offers the page again.
+                                        if (locator.text.highlight.isNullOrBlank()) return@launch
+                                        translatePassage = ActiveSelection(locator, null, null)
+                                    }
+                                }
+                            } else {
+                                null
+                            }
+                        val readAloudFromHere: (() -> Unit)? = readAloud
+                            ?.takeIf { readAloudFeature.isAvailable && readAloudConfigured && !pageTranslated }
+                            ?.let { reading ->
+                                {
+                                    effectScope.launch {
+                                        val nav = navigatorNow ?: return@launch
+                                        val captured = ExactLocatorAnchor.capture(nav, nav.currentLocator.value)
+                                        val start = SpokenPassage.startingPoint(nav, captured)
+                                        reading.start(start, null)
+                                    }
+                                }
+                            }
+                        // Actions that start something on the page, not
+                        // settings: those stay in Aa. Hidden when none can run.
+                        if (translateFromHere != null || readAloudFromHere != null) {
+                            var moreOpen by remember { mutableStateOf(false) }
+                            Box {
+                                IconButton(onClick = { moreOpen = true }) {
+                                    Icon(
+                                        Icons.Outlined.MoreVert,
+                                        contentDescription = stringResource(R.string.more_options),
+                                    )
+                                }
+                                DropdownMenu(expanded = moreOpen, onDismissRequest = { moreOpen = false }) {
+                                    translateFromHere?.let { action ->
+                                        DropdownMenuItem(
+                                            text = { Text(stringResource(R.string.translation_page_start)) },
+                                            leadingIcon = { Icon(Icons.Outlined.Translate, contentDescription = null) },
+                                            onClick = {
+                                                moreOpen = false
+                                                chromeVisible = false
+                                                action()
+                                            },
+                                        )
+                                    }
+                                    readAloudFromHere?.let { action ->
+                                        DropdownMenuItem(
+                                            text = { Text(stringResource(R.string.read_aloud_from_here)) },
+                                            leadingIcon = {
+                                                Icon(Icons.AutoMirrored.Outlined.VolumeUp, contentDescription = null)
+                                            },
+                                            onClick = {
+                                                moreOpen = false
+                                                chromeVisible = false
+                                                action()
+                                            },
+                                        )
+                                    }
+                                }
+                            }
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(

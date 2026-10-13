@@ -20,6 +20,13 @@ class TranslationStepTest {
     }
 
     @Test
+    fun `a page is decided by its languages alone`() {
+        assertEquals(TranslationStep.Translate, TranslationStep.languages(true, false, "fr", "en", mapOf("en" to PairState.Ready)))
+        assertEquals(TranslationStep.Same, TranslationStep.languages(true, false, "en-GB", "en", null))
+        assertEquals(TranslationStep.NeedsSource, TranslationStep.languages(true, false, null, "en", null))
+    }
+
+    @Test
     fun `nothing is asked of a service that is not set up`() {
         assertEquals(TranslationStep.NotSetUp, step(configured = false))
     }

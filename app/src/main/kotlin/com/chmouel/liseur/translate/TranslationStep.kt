@@ -28,8 +28,20 @@ internal sealed interface TranslationStep {
             source: String?,
             target: String,
             targets: Map<String, PairState>?,
+        ): TranslationStep = if (passage.length > TranslationPrompt.MAX_CHARACTERS) {
+            TooLong
+        } else {
+            languages(configured, detects, source, target, targets)
+        }
+
+        /** [of] without a passage, as for a page translated sentence by sentence. */
+        fun languages(
+            configured: Boolean,
+            detects: Boolean,
+            source: String?,
+            target: String,
+            targets: Map<String, PairState>?,
         ): TranslationStep = when {
-            passage.length > TranslationPrompt.MAX_CHARACTERS -> TooLong
             !configured -> NotSetUp
             source != null && TranslationLanguages.same(source, target) -> Same
             source == null && !detects -> NeedsSource

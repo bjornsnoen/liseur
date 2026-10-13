@@ -7,6 +7,7 @@ import com.chmouel.liseur.data.settings.ReaderTheme
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.util.Locale
 
 /**
  * Translating a selected passage, as the flavor-neutral reader sees it.
@@ -48,6 +49,13 @@ interface TranslateFeature {
 
     /** The chosen service, ready to translate a page sentence by sentence; null when there is none. */
     suspend fun openPage(source: String?, target: String): SentenceTranslator?
+
+    /**
+     * The languages [Sheet] would offer to translate a page of a book that
+     * [declared] its languages in, with the app in [app]; null when the
+     * reader has to choose or set something up there first.
+     */
+    suspend fun pageLanguages(declared: List<String>, app: Locale): PageTranslationModes.Mode?
 
     /**
      * The bar under a translated page, where read aloud's player sits: the
@@ -96,6 +104,8 @@ interface TranslateFeature {
         ) = Unit
 
         override suspend fun openPage(source: String?, target: String): SentenceTranslator? = null
+
+        override suspend fun pageLanguages(declared: List<String>, app: Locale): PageTranslationModes.Mode? = null
 
         @Composable
         override fun PageBar(
