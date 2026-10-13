@@ -72,8 +72,8 @@ columns, the footer mode, the page-turn animation and the
 just-this-book toggle, leaving the first sheet the five answers a
 reader changes often: the theme, the size, the light, the face, and
 whether the book is read by scrolling or by turning pages. Keeping the
-screen awake stays there too, being a thing a reader reaches for
-mid-chapter.
+screen awake moved behind Advanced with the rest of the rare settings:
+it is set once and left, the way the footer and the page-turn style are.
 
 The Advanced row is no longer conditional. It was hidden in a paginated
 book while auto-scroll was all that lived behind it, because the way in

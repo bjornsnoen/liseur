@@ -4238,8 +4238,6 @@ fun ReaderScreen(
             onFontSizeChanged = onPrefsAction.setFontSize,
             onThemeSelected = onPrefsAction.setTheme,
             onBrightnessChanged = onPrefsAction.setBrightness,
-            keepScreenOn = keepScreenOn,
-            onKeepScreenOnChanged = onKeepScreenOnChanged,
             scrollMode = scrollMode,
             onScrollModeChanged = onScrollModeChanged,
             scrolling = effectiveScrolling,
@@ -4271,6 +4269,8 @@ fun ReaderScreen(
             onHighlightTintToggled = onHighlightTintToggled,
             onHighlightDefaultTintChanged = onHighlightDefaultTintChanged,
             onAutoScrollSpeedChanged = onPrefsAction.setAutoScrollSpeed,
+            keepScreenOn = keepScreenOn,
+            onKeepScreenOnChanged = onKeepScreenOnChanged,
             onTypographyIsOwnChanged = onPrefsAction.setTypographyIsOwn,
             // Back to typography, not back to the book: this sheet was
             // reached from there, and that is where the reader left off.

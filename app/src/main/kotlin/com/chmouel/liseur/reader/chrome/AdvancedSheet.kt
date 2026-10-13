@@ -101,6 +101,8 @@ fun AdvancedSheet(
     onHighlightTintToggled: (HighlightTint) -> Unit,
     onHighlightDefaultTintChanged: (HighlightTint) -> Unit,
     onAutoScrollSpeedChanged: (Float) -> Unit,
+    keepScreenOn: Boolean,
+    onKeepScreenOnChanged: (Boolean) -> Unit,
     onTypographyIsOwnChanged: (Boolean) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -163,11 +165,37 @@ fun AdvancedSheet(
             if (scrolling) {
                 AutoScrollSpeedSlider(value = autoScrollSpeed, onChanged = onAutoScrollSpeedChanged)
             }
+            KeepScreenOnToggle(
+                enabled = keepScreenOn,
+                onChanged = onKeepScreenOnChanged,
+            )
             JustThisBookToggle(
                 enabled = typographyIsOwn,
                 onChanged = onTypographyIsOwnChanged,
             )
         }
+    }
+}
+
+@Composable
+private fun KeepScreenOnToggle(enabled: Boolean, onChanged: (Boolean) -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .toggleable(
+                value = enabled,
+                role = Role.Switch,
+                onValueChange = onChanged,
+            ),
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.settings_keep_screen_on),
+                style = MaterialTheme.typography.bodyLarge,
+            )
+        }
+        Switch(checked = enabled, onCheckedChange = null)
     }
 }
 

@@ -72,8 +72,6 @@ fun TypographySheet(
     onFontSizeChanged: (Double) -> Unit,
     onThemeSelected: (ReaderThemeChoice) -> Unit,
     onBrightnessChanged: (Float?) -> Unit,
-    keepScreenOn: Boolean,
-    onKeepScreenOnChanged: (Boolean) -> Unit,
     scrollMode: Boolean,
     onScrollModeChanged: (Boolean) -> Unit,
     scrolling: Boolean,
@@ -128,10 +126,6 @@ fun TypographySheet(
                     onChanged = onAutoScrollChanged,
                 )
             }
-            KeepScreenOnToggle(
-                enabled = keepScreenOn,
-                onChanged = onKeepScreenOnChanged,
-            )
             // Last, and always. The sheet behind it has rows for any
             // book, read either way, so it can no longer open empty.
             AdvancedRow(onClick = onOpenAdvanced)
@@ -247,32 +241,3 @@ private fun AutoScrollToggle(enabled: Boolean, onChanged: (Boolean) -> Unit) {
 }
 
 
-/**
- * Holds the screen awake for this book alone.
- *
- * Settings holds the answer for the library, and it is what a book
- * starts from; flipping it here sets this book apart for good, the way a
- * book can be set apart for its typography, and a later change in
- * Settings leaves it where it was put.
- */
-@Composable
-private fun KeepScreenOnToggle(enabled: Boolean, onChanged: (Boolean) -> Unit) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .toggleable(
-                value = enabled,
-                role = Role.Switch,
-                onValueChange = onChanged,
-            ),
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(
-                text = stringResource(R.string.settings_keep_screen_on),
-                style = MaterialTheme.typography.bodyLarge,
-            )
-        }
-        Switch(checked = enabled, onCheckedChange = null)
-    }
-}

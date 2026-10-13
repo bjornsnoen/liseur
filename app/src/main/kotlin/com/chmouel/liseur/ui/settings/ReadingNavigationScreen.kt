@@ -157,13 +157,6 @@ fun ReadingNavigationScreen(
                 // they read as one more preference rather than as what
                 // they are: a description of the hardware.
                 SettingsGroup(stringResource(R.string.settings_screen)) {
-                    SwitchRow(
-                        title = stringResource(R.string.settings_keep_screen_on),
-                        subtitle = stringResource(R.string.settings_keep_screen_on_detail),
-                        checked = settings.keepScreenOn,
-                        onCheckedChange = onKeepScreenOn,
-                    )
-                    RowDivider()
                     ChipRow(
                         title = stringResource(R.string.settings_eink),
                         subtitle = stringResource(R.string.settings_eink_detail),
@@ -269,6 +262,13 @@ fun ReadingNavigationScreen(
                         subtitle = stringResource(R.string.settings_lock_footer_detail),
                         checked = settings.lockFooterOn,
                         onCheckedChange = onLockFooter,
+                    )
+                    RowDivider()
+                    SwitchRow(
+                        title = stringResource(R.string.settings_keep_screen_on),
+                        subtitle = stringResource(R.string.settings_keep_screen_on_detail),
+                        checked = settings.keepScreenOn,
+                        onCheckedChange = onKeepScreenOn,
                     )
                 }
             }
