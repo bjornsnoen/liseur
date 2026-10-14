@@ -61,7 +61,7 @@ help:
 		'make screenshots       Capture the UI screenshots' \
 		'make icon              Generate the store icon' \
 		'make feature-graphic   Generate the store feature graphic' \
-		'make store-status      Show what each store is publishing' \
+		'make store-status      Show each store, plus Play crashes (DAYS=7)' \
 		'' \
 		'Variables: AVD=liseur_phone_api36 SERIAL=... LOCALE=... FLAVOR=play|foss'
 
@@ -246,4 +246,4 @@ feature-graphic:
 	./hack/feature-graphic
 
 store-status:
-	./hack/store-status
+	./hack/store-status $(if $(DAYS),--days $(DAYS))

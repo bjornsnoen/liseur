@@ -76,19 +76,18 @@ target wrapping them. Run `make help` for the short list. See
   tagging (`--range`, `--changelog`, `--copilot`, `--no-fallback`) and
   commits the reviewed result as `docs/release-notes/vX.Y.Z.md`, which
   the release workflow then uses as it is.
-- `store-status`: Answers "where is Liseur published?" for all
-  three channels at once: the last GitHub releases, what F-Droid has
-  published and how old its index is, what its last build run did with
-  the app, the fdroiddata metadata, any open merge request with its
-  pipeline state, and what sits on each Google Play track. It also says
-  when the closed track that testers are recruited into falls behind
-  internal, who may install from it, which countries it reaches, and
-  whether its testers come from a Google Group or an email list the API
-  cannot read. It also prints the opt-in link they are handed.
-  Everything but the Play section reads public sources; Play has no
-  public answer while the app is in testing, so that one signs a token
-  with the service account from `pass` and is skipped with a line when it
-  cannot. Backs `make store-status`.
+- `store-status`: Answers "where is Liseur published, and how is it
+  doing?" for all three channels at once: the last GitHub releases, what
+  F-Droid has published and how old its index is, what its last build run
+  did with the app, the fdroiddata metadata, any open merge request with
+  its pipeline state, what sits on each Google Play track (production
+  first, with any staged rollout), and how many crashes and ANRs Android
+  vitals counted over the last seven days (`--days N`, or `make
+  store-status DAYS=N`) with the top five issues. The Play sections sign
+  a token with the service account from `pass` and are skipped with a line
+  when they cannot. The vitals need the Google Play Developer Reporting
+  API enabled in the service account's Google Cloud project. Backs `make
+  store-status`.
 - `verify-reproducible`: Builds the release APK twice from two
   independent clean checkouts and diffs them byte for byte, the check
   F-Droid's reproducible-builds requirement demands before submission.

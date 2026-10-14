@@ -1,333 +1,587 @@
-#!/usr/bin/env bash
+#!/usr/bin/env python3
+"""Answers "where is Liseur published, and how is it doing?" in one shot.
 
-# Answers "where is Liseur published?" in one shot, across all three
-# channels: the GitHub release, F-Droid (what is published, how fresh the
-# index is, what the last build run did with the app, what the fdroiddata
-# metadata says, and whether an open merge request is waiting on anyone)
-# and Google Play's testing tracks.
-#
-# Everything but the Play section reads public sources and needs no
-# login. Play has no public answer at all for an app that has never left
-# internal testing, so that one asks the Play Developer API with the
-# service account from pass — and when it cannot, it says so in a line
-# and the rest of the report still prints.
+Covers all three channels: the GitHub releases, F-Droid (what is
+published, how fresh the index is, what the last build run did with the
+app, what the fdroiddata metadata says, and whether an open merge request
+is waiting on anyone), and Google Play: what sits on each track, and how
+many crashes and ANRs Android vitals counted over the last few days.
 
-set -euo pipefail
+Everything but the Play sections reads public sources and needs no login.
+Play asks the Play Developer API and the Play Developer Reporting API with
+the service account from pass. When it cannot, it says so in a line and
+the rest of the report still prints.
+"""
 
-readonly APP_ID="com.chmouel.liseur"
-readonly GH_REPO="chmouel/liseur"
-readonly FDROID_PROJECT="fdroid%2Ffdroiddata"
-readonly PASS_PLAY_SERVICE_ACCOUNT="android/google.play.service.serviceaccount"
-readonly PLAY_API="https://androidpublisher.googleapis.com/androidpublisher/v3"
-readonly PLAY_SCOPE="https://www.googleapis.com/auth/androidpublisher"
-# The closed track testers are actually recruited into, and the link
-# they are handed. Internal testing has its own link and its own
-# hundred-address limit, and none of its testers count towards the
-# twelve Play wants before a personal account may publish.
-readonly PLAY_CLOSED_TRACK="Testing"
-readonly PLAY_OPT_IN_URL="https://play.google.com/apps/testing/$APP_ID"
-# Consulted only when the track is not open to the rest of the world,
-# and then only to name what a tester would find missing. Neither KP nor
-# SY belongs here: Google distributes to neither at all, so their
-# absence is sanction policy rather than a switch anyone can throw.
-readonly PLAY_COUNTRY_WATCHLIST='["BR","BY","DE","FR","GB","ID","IN","RU","TR","UA","US"]'
+from __future__ import annotations
 
-die() {
-    printf 'error: %s\n' "$*" >&2
-    exit 1
+import argparse
+import base64
+import datetime as dt
+import json
+import os
+import shutil
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+
+APP_ID = "com.chmouel.liseur"
+GH_REPO = "chmouel/liseur"
+FDROID_PROJECT = "fdroid%2Ffdroiddata"
+PASS_PLAY_SERVICE_ACCOUNT = "android/google.play.service.serviceaccount"
+PLAY_API = "https://androidpublisher.googleapis.com/androidpublisher/v3"
+PLAY_SCOPE = "https://www.googleapis.com/auth/androidpublisher"
+REPORTING_API = "https://playdeveloperreporting.googleapis.com/v1beta1"
+REPORTING_SCOPE = "https://www.googleapis.com/auth/playdeveloperreporting"
+# Daily counts are only aggregated in Pacific calendar days, while the
+# issue search refuses any timezone but UTC, so the two windows cover the
+# same dates a few hours apart.
+VITALS_TIMEZONE = "America/Los_Angeles"
+ISSUES_TIMEZONE = "UTC"
+TOP_ISSUES = 5
+TIMEOUT = 30
+USER_AGENT = "liseur-store-status"
+
+# Totals use the plural, issues the singular.
+ERROR_LABELS = {
+    "CRASH": ("crashes", "crash"),
+    "APPLICATION_NOT_RESPONDING": ("ANRs", "ANR"),
+    "NON_FATAL": ("non-fatal errors", "non-fatal error"),
 }
 
-require_command() {
-    command -v "$1" >/dev/null || die "missing required command: $1"
-}
 
-api_get() {
-    curl -fsS --max-time 30 "$1"
-}
+class ApiError(Exception):
+    """An HTTP error, with Google's error body decoded when there is one."""
 
-base64url() {
-    openssl base64 -A | tr '+/' '-_' | tr -d '='
-}
+    def __init__(self, status: int, body: str):
+        self.status = status
+        self.reason = ""
+        self.activation_url = ""
+        message = body.strip()
+        try:
+            error = json.loads(body).get("error", {})
+        except (ValueError, AttributeError):
+            error = {}
+        if isinstance(error, dict):
+            message = error.get("message") or message
+            for detail in error.get("details") or []:
+                if detail.get("reason"):
+                    self.reason = detail["reason"]
+                    self.activation_url = (detail.get("metadata") or {}).get(
+                        "activationUrl", ""
+                    )
+        self.message = message.splitlines()[0] if message else f"HTTP {status}"
+        super().__init__(f"HTTP {status}: {self.message}")
 
-# A service account speaks OAuth, so the credential has to be turned into
-# a token first: sign a JWT with the account's private key and trade it
-# in. The key is handed to openssl through a process substitution fed by
-# a printf builtin, so it is never a file on disk nor an argument anyone
-# can read out of the process list.
-play_access_token() (
-    local key=$1
-    local email private_key now header claims unsigned signature response
 
-    email=$(jq -r '.client_email // empty' <<<"$key")
-    private_key=$(jq -r '.private_key // empty' <<<"$key")
-    [[ -n "$email" && -n "$private_key" ]] || return 1
+def request(
+    url: str,
+    *,
+    method: str = "GET",
+    token: str | None = None,
+    data: bytes | None = None,
+    content_type: str | None = None,
+) -> bytes:
+    headers = {"User-Agent": USER_AGENT}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    if content_type:
+        headers["Content-Type"] = content_type
+    if data is None and method in ("POST", "PUT"):
+        data = b""
+    req = urllib.request.Request(url, data=data, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=TIMEOUT) as response:
+            return response.read()
+    except urllib.error.HTTPError as e:
+        raise ApiError(e.code, e.read().decode("utf-8", "replace")) from None
 
-    now=$(date +%s)
-    header=$(printf '{"alg":"RS256","typ":"JWT"}' | base64url)
-    claims=$(jq -cn --arg iss "$email" --arg scope "$PLAY_SCOPE" \
-        --argjson iat "$now" --argjson exp "$((now + 3600))" \
-        '{iss: $iss, scope: $scope,
-          aud: "https://oauth2.googleapis.com/token", iat: $iat, exp: $exp}' |
-        base64url)
-    unsigned="$header.$claims"
-    signature=$(printf '%s' "$unsigned" |
-        openssl dgst -sha256 -sign <(printf '%s\n' "$private_key") -binary |
-        base64url) || return 1
 
-    response=$(curl -fsS --max-time 30 -X POST \
-        https://oauth2.googleapis.com/token \
-        --data-urlencode 'grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer' \
-        --data-urlencode "assertion=$unsigned.$signature") || return 1
-    jq -er '.access_token // empty' <<<"$response"
-)
+def get_json(url: str, **kwargs):
+    return json.loads(request(url, **kwargs))
 
-# Reading what is on a track goes through an edit, because the API
-# offers no other way to list them. One edit serves every read below and
-# is deleted without ever being committed, so the listing is not touched.
-play_edit_open() {
-    curl -fsS --max-time 30 -X POST \
-        -H "Authorization: Bearer $1" -H "Content-Length: 0" \
-        "$PLAY_API/applications/$APP_ID/edits" | jq -er '.id // empty'
-}
 
-play_edit_close() {
-    curl -fsS --max-time 30 -X DELETE -H "Authorization: Bearer $1" \
-        "$PLAY_API/applications/$APP_ID/edits/$2" >/dev/null 2>&1 || true
-}
+def post_json(url: str, body: dict, token: str):
+    return json.loads(
+        request(
+            url,
+            method="POST",
+            token=token,
+            data=json.dumps(body).encode(),
+            content_type="application/json",
+        )
+    )
 
-# One GET under the open edit. Every caller reads an empty answer as
-# "could not tell", so a section that fails costs its own line rather
-# than the rest of the report.
-play_get() {
-    curl -fsS --max-time 30 -H "Authorization: Bearer $1" \
-        "$PLAY_API/applications/$APP_ID/edits/$2/$3" 2>/dev/null
-}
 
-# Who may install it, country-wise. This is track-level console state
-# that an upload never touches, which is why it outlives every release,
-# and it is the first thing a tester blames when the store tells them
-# the app is not available — usually wrongly. "Rest of the world" being
-# on settles the question by itself: there is no country left over to be
-# missing, so the watchlist is only worth consulting when it is off.
-report_play_countries() {
-    local countries=$1
+def utc_ms(ms: int) -> str:
+    return time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(ms / 1000))
 
-    if [[ -z "$countries" ]]; then
-        printf '  countries: could not be read\n'
+
+# --- GitHub and F-Droid ----------------------------------------------------
+
+
+def format_github(releases: list) -> list[str]:
+    if not releases:
+        return ["  none published"]
+    lines = []
+    for release in releases:
+        assets = [a["name"] for a in release.get("assets") or []]
+        lines.append(
+            f"  {release['tag_name']}"
+            + (" (prerelease)" if release.get("prerelease") else "")
+            + f" — {(release.get('published_at') or '?')[:10]}, "
+            + (", ".join(assets) if assets else "no asset")
+        )
+    return lines
+
+
+def format_fdroid_packages(packages: dict) -> list[str]:
+    lines = [f"suggested versionCode: {packages.get('suggestedVersionCode')}"]
+    for package in packages.get("packages") or []:
+        lines.append(f"  {package['versionName']} ({package['versionCode']})")
+    return lines
+
+
+def format_fdroid_run(run: dict) -> list[str]:
+    line = f"started: {utc_ms(run['startTimestamp'])}"
+    if run.get("endTimestamp"):
+        line += f", finished: {utc_ms(run['endTimestamp'])}"
+    else:
+        line += ", still running"
+    lines = [line]
+    built = [b for b in run.get("successfulBuildIds") or [] if b[0] == APP_ID]
+    failed = [b for b in run.get("failedBuilds") or [] if b[0] == APP_ID]
+    if not built and not failed:
+        lines.append(f"no {APP_ID} build in this run")
+    lines += [f"  built: versionCode {b[1]}" for b in built]
+    lines += [f"  FAILED: {json.dumps(b, separators=(',', ':'))}" for b in failed]
+    return lines
+
+
+def format_fdroid_metadata(metadata: str) -> list[str]:
+    keys = ("CurrentVersion:", "CurrentVersionCode:", "Binaries:", "AllowedAPKSigningKeys:")
+    lines = [f"  {line}" for line in metadata.splitlines() if line.startswith(keys)]
+    codes = [
+        line.split(":", 1)[1].strip()
+        for line in metadata.splitlines()
+        if line.startswith("    versionCode: ")
+    ]
+    lines.append("  builds:" + "".join(f" {code}" for code in codes))
+    return lines
+
+
+def format_merge_request(mr: dict) -> list[str]:
+    state = "draft" if mr.get("draft") else "open"
+    if mr.get("head_pipeline"):
+        state += f", pipeline {mr['head_pipeline']['status']}"
+    return [f"  !{mr['iid']} [{state}] {mr['title']}", f"    {mr['web_url']}"]
+
+
+def report_github() -> None:
+    print(f"== GitHub releases ({GH_REPO}) ==")
+    try:
+        releases = get_json(f"https://api.github.com/repos/{GH_REPO}/releases?per_page=3")
+    except (OSError, ValueError, ApiError):
+        print("  releases unavailable")
         return
-    fi
+    print("\n".join(format_github(releases)))
 
-    printf '%s' "$countries" | jq -r --argjson watch "$PLAY_COUNTRY_WATCHLIST" '
-        [(.countries // [])[].countryCode] as $codes
-        | if .restOfWorld then
-              "  countries: all of them — \($codes | length) named and rest of"
-              + " the world is on, so nobody is turned away for theirs"
-          else
-              ("  countries: \($codes | length) named, rest of the world is OFF"),
-              (($watch - $codes) as $missing
-               | if ($missing | length) == 0 then
-                     "  every country on the watchlist is switched on"
-                 else
-                     "  warning: switched off: \($missing | join(", "))"
-                 end)
-          end'
-}
 
-# Who may install it, person-wise — as far as it can be told, which is
-# not far. A track draws its testers either from Google Groups or from
-# an email list, never both, and the API models only the first: its own
-# reference says email lists are not supported by this resource. So an
-# empty answer here is not an empty track, it is the ordinary state of
-# one running off a list that only the console can show. Said outright,
-# because the alternative is reading it as "nobody is a tester" and
-# hunting a fault that was never there.
-report_play_testers() {
-    local testers=$1
+def report_fdroid() -> None:
+    print(f"\n== F-Droid: published ({APP_ID}) ==")
+    try:
+        print("\n".join(format_fdroid_packages(
+            get_json(f"https://f-droid.org/api/v1/packages/{APP_ID}"))))
+    except (OSError, ValueError, ApiError):
+        print("  not in the package index")
+    try:
+        entry = get_json("https://f-droid.org/repo/entry.json")
+        print(f"index generated: {utc_ms(entry['timestamp'])}")
+    except (OSError, ValueError, KeyError, ApiError):
+        pass
 
-    if [[ -z "$testers" ]]; then
-        printf '  testers: could not be read\n'
+    print("\n== F-Droid: last build run ==")
+    try:
+        print("\n".join(format_fdroid_run(
+            get_json("https://f-droid.org/repo/status/running.json"))))
+    except (OSError, ValueError, KeyError, ApiError):
+        print("  status unavailable")
+
+    print("\n== F-Droid: fdroiddata metadata (master) ==")
+    try:
+        metadata = request(
+            f"https://gitlab.com/api/v4/projects/{FDROID_PROJECT}/repository/files/"
+            f"metadata%2F{APP_ID}.yml/raw?ref=master"
+        ).decode()
+        print("\n".join(format_fdroid_metadata(metadata)))
+    except (OSError, ValueError, ApiError):
+        print("  no metadata upstream yet")
+
+    print("\n== F-Droid: merge requests ==")
+    try:
+        mrs = get_json(
+            f"https://gitlab.com/api/v4/projects/{FDROID_PROJECT}/merge_requests"
+            "?search=liseur&in=title&state=opened&per_page=20"
+        )
+        if not mrs:
+            print("  none open")
+        for mr in mrs:
+            detail = get_json(
+                f"https://gitlab.com/api/v4/projects/{FDROID_PROJECT}"
+                f"/merge_requests/{mr['iid']}"
+            )
+            print("\n".join(format_merge_request(detail)))
+    except (OSError, ValueError, KeyError, ApiError):
+        print("  merge requests unavailable")
+
+
+# --- Google Play authentication ---------------------------------------------
+
+
+def b64url(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
+
+
+def sign_rs256(private_key: str, message: bytes) -> bytes:
+    """Signs with openssl, handing it the key over an inherited pipe.
+
+    The key is never a file on disk nor an argument anyone can read out
+    of the process list.
+    """
+    read_fd, write_fd = os.pipe()
+    try:
+        # A service account key is a couple of kilobytes, far below any
+        # pipe buffer, so writing it all before openssl starts cannot block.
+        os.write(write_fd, private_key.encode())
+        os.close(write_fd)
+        write_fd = -1
+        result = subprocess.run(
+            ["openssl", "dgst", "-sha256", "-sign", f"/dev/fd/{read_fd}", "-binary"],
+            input=message,
+            pass_fds=(read_fd,),
+            capture_output=True,
+            check=True,
+        )
+    finally:
+        os.close(read_fd)
+        if write_fd >= 0:
+            os.close(write_fd)
+    return result.stdout
+
+
+def access_token(key: dict, scope: str) -> str:
+    """Trades a JWT signed with the service account's key for a token."""
+    now = int(time.time())
+    header = b64url(b'{"alg":"RS256","typ":"JWT"}')
+    claims = b64url(json.dumps({
+        "iss": key["client_email"],
+        "scope": scope,
+        "aud": "https://oauth2.googleapis.com/token",
+        "iat": now,
+        "exp": now + 3600,
+    }).encode())
+    unsigned = f"{header}.{claims}"
+    signature = b64url(sign_rs256(key["private_key"], unsigned.encode()))
+    response = json.loads(request(
+        "https://oauth2.googleapis.com/token",
+        method="POST",
+        data=urllib.parse.urlencode({
+            "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
+            "assertion": f"{unsigned}.{signature}",
+        }).encode(),
+        content_type="application/x-www-form-urlencoded",
+    ))
+    return response["access_token"]
+
+
+def service_account() -> tuple[dict | None, str]:
+    """The service account key, or why there is none."""
+    if not shutil.which("openssl"):
+        return None, "openssl is needed to sign the token request; skipped"
+    if not shutil.which("pass"):
+        return None, "pass is needed for the service account; skipped"
+    result = subprocess.run(
+        ["pass", "show", PASS_PLAY_SERVICE_ACCOUNT], capture_output=True, text=True
+    )
+    if result.returncode != 0 or not result.stdout.strip():
+        return None, f"no {PASS_PLAY_SERVICE_ACCOUNT} in pass; skipped"
+    try:
+        key = json.loads(result.stdout)
+    except ValueError:
+        return None, f"{PASS_PLAY_SERVICE_ACCOUNT} is not a JSON key; skipped"
+    if not key.get("client_email") or not key.get("private_key"):
+        return None, f"{PASS_PLAY_SERVICE_ACCOUNT} has no client_email or private_key; skipped"
+    return key, ""
+
+
+def token_for(key: dict, scope: str) -> str | None:
+    try:
+        return access_token(key, scope)
+    except (OSError, ValueError, KeyError, ApiError, subprocess.CalledProcessError):
+        return None
+
+
+# --- Google Play tracks -------------------------------------------------------
+
+
+def format_tracks(tracks: dict) -> list[str]:
+    """Every track, production first; closed tracks named by hand included."""
+    all_tracks = tracks.get("tracks") or []
+    if not all_tracks:
+        return ["  no tracks"]
+    ordered = sorted(all_tracks, key=lambda t: t.get("track") != "production")
+    lines = []
+    for track in ordered:
+        name = track.get("track", "?")
+        releases = track.get("releases") or []
+        if not releases:
+            lines.append(f"  {name}: nothing released")
+        for release in releases:
+            status = release.get("status", "?")
+            if release.get("userFraction"):
+                status += f", {int(release['userFraction'] * 100)}% rollout"
+            codes = ", ".join(release.get("versionCodes") or ["none"])
+            lines.append(
+                f"  {name}: {release.get('name') or 'unnamed'} [{status}] versionCode {codes}"
+            )
+    return lines
+
+
+def report_play_tracks(key: dict) -> None:
+    print("\n== Google Play: tracks ==")
+    token = token_for(key, PLAY_SCOPE)
+    if not token:
+        print("  the service account was refused a token; skipped")
         return
-    fi
-
-    printf '%s' "$testers" | jq -r '
-        if ((.googleGroups // []) | length) > 0 then
-            "  testers: Google Groups — \(.googleGroups | join(", "))"
-        else
-            "  testers: an email list in the console, which the API cannot"
-            + " read; who is on it has to be looked up there"
-        end'
-}
-
-# Play is the one section behind a login, and the only one that can be
-# skipped: an unlocked password store is a lot to ask of someone who
-# wanted to know what F-Droid is showing.
-report_play() {
-    local key token edit tracks countries testers
-
-    if ! command -v openssl >/dev/null; then
-        printf '  openssl is needed to sign the token request; skipped\n'
+    # Listing tracks goes through an edit, because the API offers no other
+    # way. It is deleted without ever being committed, so the listing is
+    # not touched.
+    edits = f"{PLAY_API}/applications/{APP_ID}/edits"
+    try:
+        edit = get_json(edits, method="POST", token=token)["id"]
+    except (OSError, ValueError, KeyError, ApiError):
+        print(f"  the Play Developer API did not answer for {APP_ID}")
         return
-    fi
-    if ! command -v pass >/dev/null; then
-        printf '  pass is needed for the service account; skipped\n'
+    try:
+        tracks = get_json(f"{edits}/{edit}/tracks", token=token)
+    except (OSError, ValueError, ApiError):
+        print(f"  the Play Developer API did not answer for {APP_ID}")
         return
-    fi
-    if ! key=$(pass show "$PASS_PLAY_SERVICE_ACCOUNT" 2>/dev/null) ||
-        [[ -z "$key" ]]; then
-        printf '  no %s in pass; skipped\n' "$PASS_PLAY_SERVICE_ACCOUNT"
+    finally:
+        try:
+            request(f"{edits}/{edit}", method="DELETE", token=token)
+        except (OSError, ApiError):
+            pass
+    print("\n".join(format_tracks(tracks)))
+
+
+# --- Google Play vitals -------------------------------------------------------
+
+
+def vitals_window(freshness: dict, days: int) -> tuple[dt.date, dt.date]:
+    """The last `days` complete Pacific days: [start, end), end exclusive.
+
+    The end is where daily data actually stops, which trails today by a
+    day or two, rather than today itself.
+    """
+    for entry in (freshness.get("freshnessInfo") or {}).get("freshnesses") or []:
+        if entry.get("aggregationPeriod") == "DAILY":
+            latest = entry["latestEndTime"]
+            end = dt.date(latest["year"], latest["month"], latest["day"])
+            return end - dt.timedelta(days=days), end
+    raise ValueError("no daily freshness")
+
+
+def date_time(day: dt.date) -> dict:
+    return {
+        "year": day.year,
+        "month": day.month,
+        "day": day.day,
+        "timeZone": {"id": VITALS_TIMEZONE},
+    }
+
+
+def decimal(row: dict, metric: str) -> int:
+    for value in row.get("metrics") or []:
+        if value.get("metric") == metric:
+            return int(float((value.get("decimalValue") or {}).get("value", 0)))
+    return 0
+
+
+def summarize_counts(rows: list) -> dict[str, tuple[int, int]]:
+    """Reports summed over the window, and the most users on any one day.
+
+    Distinct users cannot be added up across days without counting the
+    same person twice, so only the worst day is kept.
+    """
+    summary: dict[str, tuple[int, int]] = {}
+    for row in rows:
+        kind = next(
+            (d.get("stringValue") for d in row.get("dimensions") or []
+             if d.get("dimension") == "reportType"),
+            None,
+        )
+        if not kind:
+            continue
+        if kind == "ANR":
+            kind = "APPLICATION_NOT_RESPONDING"
+        reports, users = summary.get(kind, (0, 0))
+        summary[kind] = (
+            reports + decimal(row, "errorReportCount"),
+            max(users, decimal(row, "distinctUsers")),
+        )
+    return summary
+
+
+def format_vitals_totals(
+    summary: dict[str, tuple[int, int]], start: dt.date, end: dt.date
+) -> list[str]:
+    last = end - dt.timedelta(days=1)
+    lines = [f"  {start} to {last} (Pacific days, as far as Play has data)"]
+    kinds = ["CRASH", "APPLICATION_NOT_RESPONDING"]
+    kinds += sorted(k for k in summary if k not in kinds)
+    for kind in kinds:
+        reports, users = summary.get(kind, (0, 0))
+        label = ERROR_LABELS.get(kind, (kind.lower(),))[0]
+        line = f"  {label}: {reports} report{'s' if reports != 1 else ''}"
+        if reports:
+            line += f", up to {users} user{'s' if users != 1 else ''} a day"
+        lines.append(line)
+    return lines
+
+
+def format_issues(issues: list) -> list[str]:
+    if not issues:
+        return ["  no crash or ANR issues in this window"]
+    lines = [f"  top {len(issues)} by reports:"]
+    for issue in issues:
+        kind = issue.get("type", "?")
+        kind = ERROR_LABELS.get(kind, (kind, kind.lower()))[1]
+        first = (issue.get("firstAppVersion") or {}).get("versionCode", "?")
+        last = (issue.get("lastAppVersion") or {}).get("versionCode", "?")
+        versions = f"versionCode {first}" if first == last else f"versionCode {first}–{last}"
+        # The reference has these the other way round, but Play answers
+        # with the exception or signal in location and the method or
+        # library in cause.
+        error = issue.get("location") or "unknown error"
+        where = issue.get("cause")
+        lines.append(
+            f"  - {issue.get('errorReportCount', '?')}× {error}"
+            + (f" at {where}" if where else "")
+        )
+        users = issue.get("distinctUsers", "?")
+        lines.append(f"    {kind}, {users} user{'' if users == '1' else 's'}, {versions}")
+        if issue.get("issueUri"):
+            lines.append(f"    {issue['issueUri']}")
+    return lines
+
+
+def describe_reporting_error(error: Exception) -> str:
+    if isinstance(error, ApiError):
+        if error.reason == "SERVICE_DISABLED":
+            return (
+                "the Play Developer Reporting API is not enabled for the service"
+                " account's Google Cloud project"
+                + (f"; enable it at {error.activation_url}" if error.activation_url else "")
+            )
+        if error.status == 403:
+            return (
+                "the service account may not read vitals; it needs"
+                " View app information on Liseur"
+            )
+        return f"the Play Developer Reporting API refused: {error}"
+    return f"the Play Developer Reporting API did not answer: {error}"
+
+
+def report_play_vitals(key: dict, days: int) -> None:
+    print(f"\n== Google Play: vitals (last {days} days) ==")
+    token = token_for(key, REPORTING_SCOPE)
+    if not token:
+        print("  the service account was refused a token; skipped")
         return
-    fi
-    if ! token=$(play_access_token "$key") || [[ -z "$token" ]]; then
-        printf '  the service account was refused a token; skipped\n'
+    metric_set = f"{REPORTING_API}/apps/{APP_ID}/errorCountMetricSet"
+    try:
+        start, end = vitals_window(get_json(metric_set, token=token), days)
+        rows: list = []
+        page_token = None
+        while True:
+            body = {
+                "timelineSpec": {
+                    "aggregationPeriod": "DAILY",
+                    "startTime": date_time(start),
+                    "endTime": date_time(end),
+                },
+                "dimensions": ["reportType"],
+                "metrics": ["errorReportCount", "distinctUsers"],
+            }
+            if page_token:
+                body["pageToken"] = page_token
+            response = post_json(f"{metric_set}:query", body, token)
+            rows += response.get("rows") or []
+            page_token = response.get("nextPageToken")
+            if not page_token:
+                break
+    except (OSError, ValueError, KeyError, ApiError) as e:
+        print(f"  {describe_reporting_error(e)}")
         return
-    fi
-    if ! edit=$(play_edit_open "$token") || [[ -z "$edit" ]]; then
-        printf '  the Play Developer API did not answer for %s\n' "$APP_ID"
+    print("\n".join(format_vitals_totals(summarize_counts(rows), start, end)))
+
+    params = {
+        "filter": "errorIssueType = CRASH OR errorIssueType = ANR",
+        "orderBy": "errorReportCount desc",
+        "pageSize": str(TOP_ISSUES),
+    }
+    for edge, day in (("startTime", start), ("endTime", end)):
+        params.update({
+            f"interval.{edge}.year": str(day.year),
+            f"interval.{edge}.month": str(day.month),
+            f"interval.{edge}.day": str(day.day),
+            f"interval.{edge}.timeZone.id": ISSUES_TIMEZONE,
+        })
+    try:
+        issues = get_json(
+            f"{REPORTING_API}/apps/{APP_ID}/errorIssues:search?"
+            + urllib.parse.urlencode(params),
+            token=token,
+        ).get("errorIssues") or []
+    except (OSError, ValueError, ApiError) as e:
+        print(f"  issues: {describe_reporting_error(e)}")
         return
-    fi
+    print("\n".join(format_issues(issues)))
 
-    tracks=$(play_get "$token" "$edit" "tracks")
-    countries=$(play_get "$token" "$edit" "countryAvailability/$PLAY_CLOSED_TRACK")
-    testers=$(play_get "$token" "$edit" "testers/$PLAY_CLOSED_TRACK")
-    play_edit_close "$token" "$edit"
 
-    # A tracks read that came back empty means the edit or the account is
-    # unusable, not that the app has no tracks, and the two reads beside
-    # it will have failed for the same reason. One line, rather than
-    # three saying the same thing.
-    if [[ -z "$tracks" ]]; then
-        printf '  the Play Developer API did not answer for %s\n' "$APP_ID"
+def report_play(days: int) -> None:
+    key, why = service_account()
+    if key is None:
+        print("\n== Google Play ==")
+        print(f"  {why}")
         return
-    fi
+    report_play_tracks(key)
+    report_play_vitals(key, days)
 
-    # Every track the account has is printed, including closed ones
-    # named by hand, so nothing here may assume the four standard names.
-    printf '%s' "$tracks" | jq -r '
-        if ((.tracks // []) | length) == 0 then
-            "  no tracks"
-        else
-            .tracks[]
-            | . as $track
-            | if (($track.releases // []) | length) == 0 then
-                  "  \($track.track): nothing released"
-              else
-                  $track.releases[]
-                  | "  \($track.track): \(.name // "unnamed")"
-                    + " [\(.status // "?")"
-                    + (if .userFraction
-                       then ", \(.userFraction * 100 | floor)% rollout"
-                       else "" end)
-                    + "] versionCode \((.versionCodes // ["none"]) | join(", "))"
-              end
-        end'
 
-    # A build on internal and nowhere else is the state that went
-    # unnoticed for four releases: everyone who followed the opt-in link
-    # is on the closed track, so a closed track left behind is a room
-    # full of testers reading an old build and a fourteen-day clock that
-    # is not running. Said outright rather than left to be spotted in the
-    # version codes above.
-    printf '%s' "$tracks" | jq -r --arg closed "$PLAY_CLOSED_TRACK" '
-        def codes($name):
-            [.tracks[]? | select(.track == $name)
-             | .releases[]? | .versionCodes[]? | tonumber] | max // 0;
-        (codes("internal")) as $internal
-        | (codes($closed)) as $recruiting
-        | if $recruiting == 0 and $internal == 0 then
-              "  warning: nothing on either the \($closed) or internal track"
-          elif $recruiting == 0 then
-              "  warning: nothing on the \($closed) track; the opt-in link leads nowhere"
-          elif $internal == 0 then
-              "  \($closed) has versionCode \($recruiting); nothing on internal"
-          elif $recruiting < $internal then
-              "  warning: \($closed) has versionCode \($recruiting), internal has \($internal);"
-              + " testers who used the opt-in link are on the older build"
-          else
-              "  \($closed) is level with internal at versionCode \($recruiting)"
-          end'
-    report_play_countries "$countries"
-    report_play_testers "$testers"
-    printf '  tester opt-in: %s\n' "$PLAY_OPT_IN_URL"
-}
+def positive_int(value: str) -> int:
+    number = int(value)
+    if number < 1:
+        raise argparse.ArgumentTypeError("must be at least 1")
+    return number
 
-require_command curl
-require_command jq
 
-printf '== GitHub releases (%s) ==\n' "$GH_REPO"
-if releases=$(api_get "https://api.github.com/repos/$GH_REPO/releases?per_page=3"); then
-    printf '%s' "$releases" | jq -r '
-        if length == 0 then "  none published"
-        else
-            .[]
-            | "  \(.tag_name)\(if .prerelease then " (prerelease)" else "" end)"
-              + " — \(.published_at[0:10]), "
-              + (if (.assets | length) == 0 then "no asset"
-                 else ([.assets[].name] | join(", ")) end)
-        end'
-else
-    printf '  releases unavailable\n'
-fi
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument(
+        "--days", type=positive_int, default=7,
+        help="how many days of Play vitals to count (default: 7)",
+    )
+    args = parser.parse_args()
+    report_github()
+    report_fdroid()
+    report_play(args.days)
+    return 0
 
-printf '\n== F-Droid: published (%s) ==\n' "$APP_ID"
-if packages=$(api_get "https://f-droid.org/api/v1/packages/$APP_ID"); then
-    printf '%s' "$packages" | jq -r '
-        "suggested versionCode: \(.suggestedVersionCode)",
-        (.packages[] | "  \(.versionName) (\(.versionCode))")'
-else
-    printf '  not in the package index\n'
-fi
 
-if entry=$(api_get "https://f-droid.org/repo/entry.json"); then
-    printf '%s' "$entry" | jq -r \
-        '"index generated: \(.timestamp / 1000 | strftime("%Y-%m-%d %H:%M UTC"))"'
-fi
-
-printf '\n== F-Droid: last build run ==\n'
-if run=$(api_get "https://f-droid.org/repo/status/running.json"); then
-    printf '%s' "$run" | jq -r --arg app "$APP_ID" '
-        "started: \(.startTimestamp / 1000 | strftime("%Y-%m-%d %H:%M UTC"))"
-        + (if .endTimestamp then
-            ", finished: \(.endTimestamp / 1000 | strftime("%Y-%m-%d %H:%M UTC"))"
-           else ", still running" end),
-        ([.successfulBuildIds[]? | select(.[0] == $app)] as $ok |
-         [.failedBuilds[]? | select(.[0] == $app)] as $bad |
-         if ($ok | length) + ($bad | length) == 0 then
-            "no \($app) build in this run"
-         else
-            (($ok[] | "  built: versionCode \(.[1])"),
-             ($bad[] | "  FAILED: \(.)")) // empty
-         end)'
-else
-    printf '  status unavailable\n'
-fi
-
-printf '\n== F-Droid: fdroiddata metadata (master) ==\n'
-if metadata=$(api_get "https://gitlab.com/api/v4/projects/$FDROID_PROJECT/repository/files/metadata%2F$APP_ID.yml/raw?ref=master"); then
-    printf '%s\n' "$metadata" |
-        grep -E '^(CurrentVersion|CurrentVersionCode|Binaries|AllowedAPKSigningKeys):' |
-        sed 's/^/  /'
-    printf '  builds:'
-    printf '%s\n' "$metadata" |
-        sed -nE 's/^    versionCode: ([0-9]+)$/ \1/p' | tr -d '\n'
-    printf '\n'
-else
-    printf '  no metadata upstream yet\n'
-fi
-
-printf '\n== F-Droid: merge requests ==\n'
-merge_requests=$(api_get \
-    "https://gitlab.com/api/v4/projects/$FDROID_PROJECT/merge_requests?search=liseur&in=title&state=opened&per_page=20")
-if [[ $(printf '%s' "$merge_requests" | jq length) -eq 0 ]]; then
-    printf '  none open\n'
-else
-    for iid in $(printf '%s' "$merge_requests" | jq -r '.[].iid'); do
-        api_get "https://gitlab.com/api/v4/projects/$FDROID_PROJECT/merge_requests/$iid" |
-            jq -r '
-                "  !\(.iid) [\(if .draft then "draft" else "open" end)"
-                + (if .head_pipeline then ", pipeline \(.head_pipeline.status)" else "" end)
-                + "] \(.title)\n    \(.web_url)"'
-    done
-fi
-
-printf '\n== Google Play: tracks ==\n'
-report_play
+if __name__ == "__main__":
+    sys.exit(main())

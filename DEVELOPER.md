@@ -615,8 +615,8 @@ for fourteen days before a personal developer account may publish.
 Uploading to internal alone, which is what happened up to 0.10.0, leaves
 everyone who followed the instructions on whichever build the closed
 track was last given by hand (0.9.3, as it turned out, four releases
-back). `hack/store-status` now says so in a line when the closed track
-falls behind internal, because nothing else did.
+back). `hack/store-status` lists every track with its version codes, so
+a track left behind shows up there.
 
 Nothing about the APK path changes. F-Droid's recipe builds
 the `foss` flavor (`gradle: [foss]`, so `assembleFossRelease`) and never sees `fastlane/Fastfile`, no Gradle
@@ -654,9 +654,8 @@ these are the things that quietly turn a correct opt-in link into "this
 app isn't available":
 
 - The closed `Testing` track needs an **email list** attached, holding
-  the Google account each tester uses *on their phone*. `hack/store-status`
-  says which of the two kinds of list the track is on, but it cannot say
-  who is on an email list: `edits.testers` models only Google Groups, and
+  the Google account each tester uses *on their phone*. Nothing here can
+  say who is on an email list: `edits.testers` models only Google Groups, and
   its own reference says email lists are not supported by the resource.
   That address goes on by hand in the console, and nothing here can do it
   for you.
@@ -675,8 +674,7 @@ app isn't available":
 - Country availability is **not** the reason, and has not been for as
   long as anyone has been asking. The track is open to 176 named
   countries *and* to the rest of the world, so there is no country left
-  over to be missing; `hack/store-status` prints this outright so the
-  question stops being guessed at. Russia is on the list and works: Google
+  over to be missing. Russia is on the list and works: Google
   paused Play *billing* there in 2022 and stopped paying developers with
   Russian bank accounts in 2024, and both notices say in terms that free
   apps still download. Only North Korea and Syria are absent, which is
@@ -697,8 +695,11 @@ app isn't available":
 The service account has app-level access to Liseur and must retain both
 *Release apps to testing tracks* and *Release to production, exclude devices
 and use Play app signing*. The first covers testing uploads, promotions and
-every read `hack/store-status` makes; the second lets final releases publish
-to production. Nothing in the release workflow edits tester lists.
+the track listing `hack/store-status` reads; the second lets final releases
+publish to production. Nothing in the release workflow edits tester lists.
+The crash and ANR counts in `hack/store-status` come from the Google Play
+Developer Reporting API instead, which has to be enabled in the service
+account's Google Cloud project and needs *View app information* on Liseur.
 
 Final releases promote the build already on **internal** to the
 **production** track. Play refuses a second upload of a version code it has
@@ -2685,8 +2686,9 @@ what lets it sync a book that came off an SD card.
 - Checking where things stand. `hack/store-status` prints the
   published versions, the index age, what the last build run did with
   the app, the upstream metadata, and any open merge request with its
-  pipeline state, alongside the GitHub releases and the Play tracks,
-  so one command answers what each of the three channels is showing.
+  pipeline state, alongside the GitHub releases, the Play tracks and the
+  week's Play crash counts, so one command answers what each of the
+  three channels is showing.
 - Submitted. The inclusion merge request was
   [fdroiddata!44292](https://gitlab.com/fdroid/fdroiddata/-/merge_requests/44292)
   (merged), and `hack/release` opens the per-release signature merge
