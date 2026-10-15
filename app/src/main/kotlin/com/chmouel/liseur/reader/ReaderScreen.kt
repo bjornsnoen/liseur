@@ -3993,57 +3993,10 @@ fun ReaderScreen(
                                 ),
                             )
                         }
-                        val uiLocale = LocalConfiguration.current.locales[0]
-                        val translateFromHere: (() -> Unit)? =
-                            if (translate.isAvailable && translateReady && !pageTranslated && reflowableText) {
-                                {
-                                    effectScope.launch {
-                                        val nav = navigatorNow ?: return@launch
-                                        val locator = ExactLocatorAnchor.capture(nav, nav.currentLocator.value)
-                                        val languages = translate.pageLanguages(publication.metadata.languages, uiLocale)
-                                        if (languages != null) {
-                                            startTranslatingPage(nav, locator, languages.source, languages.target)
-                                            return@launch
-                                        }
-                                        // The sheet asks for what is missing, then offers the page again.
-                                        if (locator.text.highlight.isNullOrBlank()) return@launch
-                                        translatePassage = ActiveSelection(locator, null, null)
-                                    }
-                                }
-                            } else {
-                                null
-                            }
-                        val readAloudFromHere: (() -> Unit)? = readAloud
-                            ?.takeIf { readAloudFeature.isAvailable && readAloudConfigured }
-                            ?.let { reading ->
-                                {
-                                    val attempt = pageTranslationStarts.get()
-                                    effectScope.launch(start = CoroutineStart.UNDISPATCHED) {
-                                        val nav = navigatorNow ?: return@launch
-                                        val captured = if (effectiveScrollingNow) {
-                                            scrolledPlace(nav) ?: return@launch
-                                        } else {
-                                            capture(nav, nav.currentLocator.value)
-                                        }
-                                        if (
-                                            pageTranslationStarts.get() != attempt ||
-                                            navigatorNow !== nav
-                                        ) {
-                                            return@launch
-                                        }
-                                        startReadAloudFromHere(reading) {
-                                            SpokenPassage.startingPoint(nav, captured)
-                                        }
-                                    }
-                                }
-                            }
-                        val clearTranslations = onClearTranslations?.takeIf { translate.isAvailable }
-                        // Actions that start something on the page, this
-                        // book's background recaps, and forgetting this
-                        // book's saved translations; reading settings stay
-                        // in Aa. Hidden when none applies.
+                        // This book's background recaps; reading settings
+                        // stay in Aa. Hidden when it does not apply.
                         val recapsHere = companion?.recapsHere?.collectAsStateWithLifecycle()?.value
-                        if (translateFromHere != null || readAloudFromHere != null || clearTranslations != null || recapsHere != null) {
+                        if (recapsHere != null) {
                             var moreOpen by remember { mutableStateOf(false) }
                             Box {
                                 IconButton(onClick = { moreOpen = true }) {
@@ -4053,52 +4006,16 @@ fun ReaderScreen(
                                     )
                                 }
                                 DropdownMenu(expanded = moreOpen, onDismissRequest = { moreOpen = false }) {
-                                    translateFromHere?.let { action ->
-                                        DropdownMenuItem(
-                                            text = { Text(stringResource(R.string.translation_page_start)) },
-                                            leadingIcon = { Icon(Icons.Outlined.Translate, contentDescription = null) },
-                                            onClick = {
-                                                moreOpen = false
-                                                chromeVisible = false
-                                                action()
-                                            },
-                                        )
-                                    }
-                                    readAloudFromHere?.let { action ->
-                                        DropdownMenuItem(
-                                            text = { Text(stringResource(R.string.read_aloud_from_here)) },
-                                            leadingIcon = {
-                                                Icon(Icons.AutoMirrored.Outlined.VolumeUp, contentDescription = null)
-                                            },
-                                            onClick = {
-                                                moreOpen = false
-                                                chromeVisible = false
-                                                action()
-                                            },
-                                        )
-                                    }
-                                    if (clearTranslations != null) {
-                                        DropdownMenuItem(
-                                            text = { Text(stringResource(R.string.reader_clear_translations)) },
-                                            leadingIcon = { Icon(Icons.Outlined.Delete, contentDescription = null) },
-                                            onClick = {
-                                                moreOpen = false
-                                                clearingTranslations = true
-                                            },
-                                        )
-                                    }
-                                    if (recapsHere != null) {
-                                        DropdownMenuItem(
-                                            text = { Text(stringResource(R.string.companion_settings_recaps)) },
-                                            leadingIcon = { Icon(Icons.Outlined.Summarize, contentDescription = null) },
-                                            trailingIcon = { Checkbox(checked = recapsHere, onCheckedChange = null) },
-                                            onClick = { companion?.setRecapsHere?.invoke(!recapsHere) },
-                                            modifier = Modifier.semantics {
-                                                toggleableState = ToggleableState(recapsHere)
-                                                role = Role.Checkbox
-                                            },
-                                        )
-                                    }
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.companion_settings_recaps)) },
+                                        leadingIcon = { Icon(Icons.Outlined.Summarize, contentDescription = null) },
+                                        trailingIcon = { Checkbox(checked = recapsHere, onCheckedChange = null) },
+                                        onClick = { companion?.setRecapsHere?.invoke(!recapsHere) },
+                                        modifier = Modifier.semantics {
+                                            toggleableState = ToggleableState(recapsHere)
+                                            role = Role.Checkbox
+                                        },
+                                    )
                                 }
                             }
                         }
@@ -4557,6 +4474,7 @@ fun ReaderScreen(
             keepScreenOn = keepScreenOn,
             onKeepScreenOnChanged = onKeepScreenOnChanged,
             onTypographyIsOwnChanged = onPrefsAction.setTypographyIsOwn,
+            onClearTranslations = onClearTranslations?.let { { clearingTranslations = true } },
             // Back to typography, not back to the book: this sheet was
             // reached from there, and that is where the reader left off.
             onDismiss = { sheet = ReaderSheet.TYPOGRAPHY },

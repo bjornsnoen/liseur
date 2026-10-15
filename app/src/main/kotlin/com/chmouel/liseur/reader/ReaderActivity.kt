@@ -197,23 +197,11 @@ class ReaderActivity : FragmentActivity() {
             }
         }
         setContent {
-            // Both stores, nullable until they have each actually answered.
-            //
-            // The reading theme is read once for the whole activity:
-            // ReaderViewModel.open() awaits the same store before it
-            // publishes Ready, so a second collector resolving on its own
-            // schedule could have the page painted black while
-            // MaterialTheme was still handing out the app's light colours.
-            //
-            // The app's own settings have to be waited for too, and not
-            // merely defaulted, because a page set to follow the app is
-            // resolved against the app's darkness. Answering that from the
-            // default while the real one is still loading picks the page
-            // off whatever the system is doing rather than off what the
-            // reader actually chose. One answer from each, or none yet.
             val appSettings by container.appSettings.settings.collectAsState(initial = null)
             val readerPrefs by container.readerPreferences.prefs
                 .collectAsStateWithLifecycle(initialValue = null)
+            val liseurSyncConnected by container.accountTranslationClears.observeConnected()
+                .collectAsStateWithLifecycle(initialValue = false)
             val settings = appSettings ?: AppSettings()
             val appIsDark = settings.themeMode.isDark()
             val readingPage = if (appSettings == null) {
@@ -221,12 +209,7 @@ class ReaderActivity : FragmentActivity() {
             } else {
                 readerPrefs?.themeChoice?.resolve(appIsDark)
             }
-            // The bars belong to the activity, not to the book: the page
-            // colours reach the loading and error screens too, and dark
-            // icons on a black loading screen is the same bug one scope up.
             SystemBarIcons(dark = readingPage?.isDarkPage ?: appIsDark)
-            // Keyed on the page's darkness, not the palette: a light and a
-            // sepia page report the same scheme.
             LaunchedEffect(readingPage?.isDarkPage) { readingPage?.let(::showPagesAs) }
             ProvideEInk(settings.eInkMode) {
                 LiseurTheme(
@@ -638,8 +621,10 @@ class ReaderActivity : FragmentActivity() {
                                     pageTranslationModes = remember(target?.id) {
                                         container.pageTranslationMode(checkNotNull(target).id)
                                     },
-                                    onClearTranslations = {
-                                        container.clearBookTranslationsLater(checkNotNull(target).id)
+                                    onClearTranslations = if (liseurSyncConnected) {
+                                        { container.clearBookTranslationsLater(checkNotNull(target).id) }
+                                    } else {
+                                        null
                                     },
                                     companion = companion,
                                 )

@@ -1,5 +1,6 @@
 package com.chmouel.liseur.reader.chrome
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -9,7 +10,10 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
@@ -104,6 +108,10 @@ fun AdvancedSheet(
     keepScreenOn: Boolean,
     onKeepScreenOnChanged: (Boolean) -> Unit,
     onTypographyIsOwnChanged: (Boolean) -> Unit,
+    // Forgets this book's saved translations, here and on the account.
+    // Null where there is nothing saved to forget, or no account to
+    // forget it from.
+    onClearTranslations: (() -> Unit)? = null,
     onDismiss: () -> Unit,
 ) {
     LiseurModalBottomSheet(onDismissRequest = onDismiss) {
@@ -173,6 +181,9 @@ fun AdvancedSheet(
                 enabled = typographyIsOwn,
                 onChanged = onTypographyIsOwnChanged,
             )
+            onClearTranslations?.let { clear ->
+                ClearTranslationsRow(onClick = clear)
+            }
         }
     }
 }
@@ -235,6 +246,34 @@ private fun JustThisBookToggle(enabled: Boolean, onChanged: (Boolean) -> Unit) {
             )
         }
         Switch(checked = enabled, onCheckedChange = null)
+    }
+}
+
+/**
+ * Forgets this book's saved translations, here and on the account.
+ *
+ * Last of all: offered only with a liseur-sync account connected, since
+ * that is the only place a saved translation outlives this device.
+ */
+@Composable
+private fun ClearTranslationsRow(onClick: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(role = Role.Button, onClick = onClick),
+    ) {
+        Icon(
+            Icons.Outlined.Delete,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.error,
+        )
+        Text(
+            text = stringResource(R.string.reader_clear_translations),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.error,
+        )
     }
 }
 
