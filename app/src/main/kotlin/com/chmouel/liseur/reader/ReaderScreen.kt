@@ -71,6 +71,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -258,6 +259,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import java.io.IOException
 import java.util.Collections
+import java.util.Locale
 import java.util.WeakHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import org.w3c.dom.Document
@@ -3993,10 +3995,67 @@ fun ReaderScreen(
                                 ),
                             )
                         }
-                        // This book's background recaps; reading settings
-                        // stay in Aa. Hidden when it does not apply.
+                        // The languages a page would go into with nothing
+                        // left to choose, read again each time the bar comes
+                        // up so a changed target shows. Null hides the item.
+                        val uiLocale = LocalConfiguration.current.locales[0]
+                        val pageLanguages by produceState<PageTranslationModes.Mode?>(
+                            null,
+                            chromeVisible,
+                            translateReady,
+                            pageTranslated,
+                            uiLocale,
+                        ) {
+                            value = if (translate.isAvailable && translateReady && !pageTranslated && reflowableText) {
+                                translate.pageLanguages(publication.metadata.languages, uiLocale)
+                            } else {
+                                null
+                            }
+                        }
+                        val translateLanguages = pageLanguages
+                        val translateFromHere: (() -> Unit)? = translateLanguages?.let { languages ->
+                            {
+                                effectScope.launch {
+                                    val nav = navigatorNow ?: return@launch
+                                    val locator = if (effectiveScrollingNow) {
+                                        scrolledPlace(nav) ?: return@launch
+                                    } else {
+                                        capture(nav, nav.currentLocator.value)
+                                    }
+                                    startTranslatingPage(nav, locator, languages.source, languages.target)
+                                }
+                            }
+                        }
+                        val readAloudFromHere: (() -> Unit)? = readAloud
+                            ?.takeIf { readAloudFeature.isAvailable && readAloudConfigured }
+                            ?.let { reading ->
+                                {
+                                    val attempt = pageTranslationStarts.get()
+                                    effectScope.launch(start = CoroutineStart.UNDISPATCHED) {
+                                        val nav = navigatorNow ?: return@launch
+                                        val captured = if (effectiveScrollingNow) {
+                                            scrolledPlace(nav) ?: return@launch
+                                        } else {
+                                            capture(nav, nav.currentLocator.value)
+                                        }
+                                        if (
+                                            pageTranslationStarts.get() != attempt ||
+                                            navigatorNow !== nav
+                                        ) {
+                                            return@launch
+                                        }
+                                        startReadAloudFromHere(reading) {
+                                            SpokenPassage.startingPoint(nav, captured)
+                                        }
+                                    }
+                                }
+                            }
+                        // Actions that start something from the first
+                        // sentence on screen, and this book's background
+                        // recaps; reading settings stay in Aa. Hidden when
+                        // none applies.
                         val recapsHere = companion?.recapsHere?.collectAsStateWithLifecycle()?.value
-                        if (recapsHere != null) {
+                        if (translateFromHere != null || readAloudFromHere != null || recapsHere != null) {
                             var moreOpen by remember { mutableStateOf(false) }
                             Box {
                                 IconButton(onClick = { moreOpen = true }) {
@@ -4006,16 +4065,51 @@ fun ReaderScreen(
                                     )
                                 }
                                 DropdownMenu(expanded = moreOpen, onDismissRequest = { moreOpen = false }) {
-                                    DropdownMenuItem(
-                                        text = { Text(stringResource(R.string.companion_settings_recaps)) },
-                                        leadingIcon = { Icon(Icons.Outlined.Summarize, contentDescription = null) },
-                                        trailingIcon = { Checkbox(checked = recapsHere, onCheckedChange = null) },
-                                        onClick = { companion?.setRecapsHere?.invoke(!recapsHere) },
-                                        modifier = Modifier.semantics {
-                                            toggleableState = ToggleableState(recapsHere)
-                                            role = Role.Checkbox
-                                        },
-                                    )
+                                    if (translateFromHere != null && translateLanguages != null) {
+                                        val target = translateLanguages.target
+                                        DropdownMenuItem(
+                                            text = {
+                                                Text(
+                                                    stringResource(
+                                                        R.string.reader_translate_into,
+                                                        // Mid-sentence, as the language names itself: "français", not "Français".
+                                                        Locale.forLanguageTag(target).getDisplayName(uiLocale).ifBlank { target },
+                                                    ),
+                                                )
+                                            },
+                                            leadingIcon = { Icon(Icons.Outlined.Translate, contentDescription = null) },
+                                            onClick = {
+                                                moreOpen = false
+                                                chromeVisible = false
+                                                translateFromHere()
+                                            },
+                                        )
+                                    }
+                                    readAloudFromHere?.let { action ->
+                                        DropdownMenuItem(
+                                            text = { Text(stringResource(R.string.reader_narrate_from_here)) },
+                                            leadingIcon = {
+                                                Icon(Icons.AutoMirrored.Outlined.VolumeUp, contentDescription = null)
+                                            },
+                                            onClick = {
+                                                moreOpen = false
+                                                chromeVisible = false
+                                                action()
+                                            },
+                                        )
+                                    }
+                                    if (recapsHere != null) {
+                                        DropdownMenuItem(
+                                            text = { Text(stringResource(R.string.companion_settings_recaps)) },
+                                            leadingIcon = { Icon(Icons.Outlined.Summarize, contentDescription = null) },
+                                            trailingIcon = { Checkbox(checked = recapsHere, onCheckedChange = null) },
+                                            onClick = { companion?.setRecapsHere?.invoke(!recapsHere) },
+                                            modifier = Modifier.semantics {
+                                                toggleableState = ToggleableState(recapsHere)
+                                                role = Role.Checkbox
+                                            },
+                                        )
+                                    }
                                 }
                             }
                         }
