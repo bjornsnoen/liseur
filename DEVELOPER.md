@@ -513,7 +513,10 @@ That applies to `--rc` too.
 It refuses to run on a dirty tree, off `main`, out of sync with the
 remote, on a version that is not newer, or with release notes over the
 500 characters F-Droid allows. An interrupted run can be resumed by
-invoking it again with the same version.
+invoking it again with the same version. Brief GitLab outages during the
+F-Droid step are retried, and when that step still fails after GitHub has
+published, the script prints the `hack/release --fdroid-only VERSION`
+command that finishes it.
 
 Pushing the tag is what starts `.github/workflows/release.yml`, which
 builds and signs the APK in the `release` GitHub environment and

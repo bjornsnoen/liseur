@@ -123,8 +123,65 @@ require_command() {
 # fdroiddata is a public project, so every read against it works
 # unauthenticated. Only the commit that updates the metadata needs a
 # logged-in glab, so that is the one call left going through it.
+#
+# A network blip (DNS, connect, timeout, TLS, a dropped reply) is
+# retried. An HTTP error is not: the existence checks rely on a 404
+# failing at once. The body is held until the transfer completes so a
+# retry never follows a partial one.
 gitlab_api_get() {
-    curl -fsS "https://gitlab.com/api/v4/$1"
+    local attempt status output
+    for attempt in 1 2 3 4; do
+        status=0
+        output=$(curl -fsS --connect-timeout 30 --retry 3 --retry-delay 5 \
+            "https://gitlab.com/api/v4/$1") || status=$?
+        case $status in
+            0) printf '%s\n' "$output"; return 0 ;;
+            6|7|28|35|52|56) (( attempt == 4 )) || sleep 10 ;;
+            *) return "$status" ;;
+        esac
+    done
+    return "$status"
+}
+
+# The writes go through glab, logged in, and are not safe to repeat once
+# GitLab may have seen them: a second commit to a branch it just created
+# fails. They are retried only when the connection never came up (Go's
+# "dial tcp", or a TLS handshake that timed out), so nothing was sent.
+gitlab_api_post() {
+    local path=$1 attempt status errors payload
+    errors=$(mktemp)
+    payload=$(mktemp)
+    cat > "$payload"
+    for attempt in 1 2 3 4; do
+        status=0
+        # glab sends --input bodies without a Content-Type, and GitLab
+        # rejects those with 415 on some endpoints, so say what this is.
+        glab api --hostname gitlab.com --method POST \
+            --header "Content-Type: application/json" \
+            "$path" --input "$payload" 2>"$errors" || status=$?
+        if (( status == 0 )) || (( attempt == 4 )) ||
+            ! grep -qE 'dial tcp|TLS handshake timeout' "$errors"; then
+            break
+        fi
+        printf 'GitLab: could not connect; retrying in 10s.\n' >&2
+        sleep 10
+    done
+    (( status == 0 )) || cat "$errors" >&2
+    rm -f "$errors" "$payload"
+    return "$status"
+}
+
+# Armed once the GitHub release is published: from then on a failure
+# leaves only F-Droid behind, so say that and how to finish it.
+fdroid_resume_hint() {
+    local status=$?
+    rm -f "${github_notes:-}"
+    if (( status != 0 )); then
+        printf '\nF-Droid: the submission did not finish. GitHub release v%s is published;\n' \
+            "$version" >&2
+        printf 'only F-Droid is left. Once the cause above is fixed, run:\n' >&2
+        printf '  hack/release --fdroid-only %s\n' "$version" >&2
+    fi
 }
 
 read_version_name() {
@@ -1099,11 +1156,8 @@ PY
         die "refusing to send F-Droid metadata that does not end in a newline"
 
     local commit_response new_sha
-    # glab sends --input bodies without a Content-Type, and GitLab
-    # rejects those with 415 on some endpoints, so say what this is.
-    commit_response=$(printf '%s' "$payload" | glab api --hostname gitlab.com --method POST \
-        --header "Content-Type: application/json" \
-        "projects/$source_project_id/repository/commits" --input -)
+    commit_response=$(printf '%s' "$payload" |
+        gitlab_api_post "projects/$source_project_id/repository/commits")
     new_sha=$(printf '%s' "$commit_response" | jq -r .id)
 
     if [[ -z "$merge_request_url" ]]; then
@@ -1119,9 +1173,8 @@ The build entry plus the signature extracted from the developer-signed release A
             '{source_branch: $source_branch, target_branch: "master",
               target_project_id: $target_project_id, title: $title,
               description: $description, remove_source_branch: true}')
-        mr_response=$(printf '%s' "$mr_payload" | glab api --hostname gitlab.com --method POST \
-            --header "Content-Type: application/json" \
-            "projects/$source_project_id/merge_requests" --input -)
+        mr_response=$(printf '%s' "$mr_payload" |
+            gitlab_api_post "projects/$source_project_id/merge_requests")
         merge_request_url=$(printf '%s' "$mr_response" | jq -r .web_url)
         printf 'F-Droid: opened %s for version %s.\n' "$merge_request_url" "$version"
     else
@@ -1280,6 +1333,7 @@ if [[ "$fdroid_only" == true ]]; then
         die "$tag does not contain app version $version"
 
     "./$FDROID_TAG_POLICY_SCRIPT" "$tag" "$tag-rc.1" "$tag-test.1"
+    trap fdroid_resume_hint EXIT
     update_fdroid_submission "$version" "$tag_version_code" "$commit_sha"
     exit
 fi
@@ -1443,6 +1497,7 @@ if [[ "$skip_fdroid" == true ]]; then
     printf 'F-Droid: skipped; run --fdroid-only %s once the metadata is up.\n' \
         "$version"
 else
+    trap fdroid_resume_hint EXIT
     update_fdroid_submission "$version" "$release_version_code" "$commit_sha"
 fi
 
