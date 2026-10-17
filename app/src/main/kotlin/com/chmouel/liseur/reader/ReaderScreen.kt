@@ -45,6 +45,7 @@ import androidx.compose.material.icons.automirrored.outlined.List
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.outlined.BookmarkBorder
+import androidx.compose.material.icons.outlined.CloudSync
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Hub
 import androidx.compose.material.icons.outlined.MoreVert
@@ -634,6 +635,7 @@ fun ReaderScreen(
     val bookmarked by bookmarkedFlow.collectAsStateWithLifecycle()
     val dictionary by dictionaryFlow.collectAsStateWithLifecycle()
     val footnote by footnoteFlow.collectAsStateWithLifecycle()
+    val syncable by syncableFlow.collectAsStateWithLifecycle()
 
     /*
      * Where the last touch landed, so a note can be shown beside the marker
@@ -4051,10 +4053,11 @@ fun ReaderScreen(
                                 }
                             }
                         // Actions that start something from the first
-                        // sentence on screen; reading settings, this
-                        // book's background recaps among them, stay in Aa.
+                        // sentence on screen, and syncing this book's
+                        // position; reading settings, this book's
+                        // background recaps among them, stay in Aa.
                         // Hidden when none applies.
-                        if (codexEnabled || storyAvailable || translateFromHere != null || readAloudFromHere != null) {
+                        if (codexEnabled || storyAvailable || translateFromHere != null || readAloudFromHere != null || syncable) {
                             var moreOpen by remember { mutableStateOf(false) }
                             Box {
                                 IconButton(onClick = { moreOpen = true }) {
@@ -4116,6 +4119,16 @@ fun ReaderScreen(
                                                 moreOpen = false
                                                 chromeVisible = false
                                                 action()
+                                            },
+                                        )
+                                    }
+                                    if (syncable) {
+                                        DropdownMenuItem(
+                                            text = { Text(stringResource(R.string.reader_sync_book)) },
+                                            leadingIcon = { Icon(Icons.Outlined.CloudSync, contentDescription = null) },
+                                            onClick = {
+                                                moreOpen = false
+                                                onBookSyncAction.start()
                                             },
                                         )
                                     }
@@ -4757,7 +4770,6 @@ fun ReaderScreen(
 
     if (showToc) {
         BackHandler { showToc = false }
-        val syncable by syncableFlow.collectAsStateWithLifecycle()
         val here = navigator?.currentLocator?.collectAsStateWithLifecycle()
         ContentsScreen(
             publication = publication,
