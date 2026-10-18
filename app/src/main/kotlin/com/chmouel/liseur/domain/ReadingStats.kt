@@ -53,7 +53,10 @@ data class BookReadingStats(
      */
     val progression: Double?,
     val finished: Boolean,
-    /** How many separate sittings it took, in the window being counted. */
+    /**
+     * How many separate sittings it took, in the window being counted.
+     * Pauses shorter than [SITTING_GAP_MS] do not end a sitting.
+     */
     val sessions: Int = 0,
     /** How many of [sessions] no server has been told about yet. */
     val pendingSessions: Int = 0,
@@ -94,7 +97,7 @@ data class ReadingStats(
     val booksFinished: Int,
     val books: List<BookReadingStats>,
     val recent: List<ReadingDay>,
-    /** Separate sittings in the window. */
+    /** Sittings in the window: a book's sessions less than [SITTING_GAP_MS] apart on one day count once. */
     val sessions: Int = 0,
     /** How many of [sessions] no server has been told about yet. */
     val pendingSessions: Int = 0,
@@ -225,6 +228,7 @@ fun readingStats(
 
     val stats = counted.groupBy { it.bookUrl }.map { (url, spans) ->
         val book = books[url]
+        val sittings = sittings(spans, zone)
         BookReadingStats(
             bookUrl = url,
             // A book opened directly through Android may never have had a
@@ -238,8 +242,8 @@ fun readingStats(
             firstReadAt = firstStarts[url],
             progression = book?.progression,
             finished = book?.finished == true,
-            sessions = spans.size,
-            pendingSessions = spans.count { !it.uploaded },
+            sessions = sittings.total,
+            pendingSessions = sittings.pending,
             coverPath = book?.coverPath,
             coverUrl = book?.coverUrl,
             browseServerId = book?.browseServerId,
@@ -253,11 +257,49 @@ fun readingStats(
         booksFinished = stats.count { it.finished },
         books = stats,
         recent = dailySeries(counted, zone, today, range, weekStart),
-        sessions = counted.size,
-        pendingSessions = counted.count { !it.uploaded },
+        sessions = stats.sumOf { it.sessions },
+        pendingSessions = stats.sumOf { it.pendingSessions },
         streakDays = streak,
         progressionPerHour = progressionPerHour(counted),
     )
+}
+
+/** The pause that ends a sitting; liseur-sync counts with the same one. */
+internal const val SITTING_GAP_MS = 5 * 60_000L
+
+private data class Sittings(val total: Int, val pending: Int)
+
+/**
+ * How many sittings one book's [spans] make, and how many of those no
+ * server has any part of.
+ *
+ * The reader records a new session every time it is paused, so locking
+ * the screen would otherwise turn an evening into dozens of sittings.
+ * Sessions on the same day belong to one sitting while each starts less
+ * than [SITTING_GAP_MS] after the ones before it ended. A sitting never
+ * crosses midnight, which is what lets this count be subtracted from and
+ * added to the server's, which applies the same rule day by day.
+ */
+private fun sittings(spans: List<SessionSpan>, zone: ZoneId): Sittings {
+    var total = 0
+    var pending = 0
+    for (day in spans.groupBy { it.day(zone) }.values) {
+        var end = 0L
+        var unsent = true
+        day.sortedWith(compareBy({ it.startedAt }, { it.lastReadAt })).forEachIndexed { index, span ->
+            if (index == 0 || span.startedAt - end >= SITTING_GAP_MS) {
+                if (index > 0 && unsent) pending++
+                total++
+                unsent = true
+                end = span.lastReadAt
+            } else {
+                end = maxOf(end, span.lastReadAt)
+            }
+            if (span.uploaded) unsent = false
+        }
+        if (unsent) pending++
+    }
+    return Sittings(total, pending)
 }
 
 /**

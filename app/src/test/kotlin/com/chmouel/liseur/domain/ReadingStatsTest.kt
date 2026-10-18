@@ -401,7 +401,7 @@ class ReadingStatsTest {
         val stats = readingStats(
             sessions = listOf(
                 SessionSpan("a", noonOn(today), 3_600_000, uploaded = true),
-                SessionSpan("a", noonOn(today), 1_200_000, uploaded = false),
+                SessionSpan("a", noonOn(today) + 7_200_000, 1_200_000, uploaded = false),
                 SessionSpan("b", noonOn(today.minusDays(1)), 600_000, uploaded = false),
             ),
             books = mapOf("a" to book("a"), "b" to book("b")),
@@ -416,6 +416,34 @@ class ReadingStatsTest {
         assertEquals(1_200_000, stats.recent.first { it.date == today }.pendingMs)
         assertEquals(3, stats.sessions)
         assertEquals(2, stats.pendingSessions)
+    }
+
+    @Test
+    fun `short pauses do not end a sitting, and midnight does`() {
+        val minute = 60_000L
+        fun piece(start: Long, minutes: Long, uploaded: Boolean = true) =
+            SessionSpan("a", start, minutes * minute, start + minutes * minute, uploaded = uploaded)
+        val evening = at(today.minusDays(1), 20, 0)
+        val stats = readingStats(
+            sessions = listOf(
+                // Screen locked twice in one evening, and the last part unsent.
+                piece(evening, 10),
+                piece(evening + 11 * minute, 10),
+                piece(evening + 25 * minute, 10, uploaded = false),
+                // Back after exactly the gap: a sitting of its own, never sent.
+                piece(evening + 40 * minute, 10, uploaded = false),
+                // Read on past midnight: the new day starts another.
+                piece(at(today.minusDays(1), 23, 55), 4),
+                piece(at(today, 0, 0), 10),
+            ),
+            books = mapOf("a" to book("a")),
+            zone = zone,
+            today = today,
+            range = StatsRange.THIS_WEEK,
+        )
+        assertEquals(4, stats.sessions)
+        assertEquals(4, stats.books.single().sessions)
+        assertEquals(1, stats.pendingSessions)
     }
 
     // --- Pace ---------------------------------------------------------

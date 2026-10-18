@@ -475,6 +475,14 @@ The line over the total should still end in "all your devices", and the
 sitting count should equal this device's own, not that plus the
 server's. Never do this on a phone somebody reads on.
 
+A sitting is not one recorded session. The recorder closes a session on
+every pause, so the app and liseur-sync both join sessions of the same
+book that are less than five minutes apart on the same day, across
+devices. A sitting never crosses midnight, which keeps each day's count
+independent, so the merged count is exact once everything is uploaded.
+Until then a local session that bridges two server sittings can count
+one too many.
+
 ## Releasing
 `versionName`, write the F-Droid changelog, run the tests, lint and a
 release build, commit, tag and push, publish the GitHub release, and

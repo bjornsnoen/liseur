@@ -139,7 +139,7 @@ class StatsSnapshotUnionTest {
         val local = readingStats(
             listOf(
                 SessionSpan("book", at, 20 * 60_000, at),
-                SessionSpan("book", at + 1, 10 * 60_000, at + 1),
+                SessionSpan("book", at + 3_600_000, 10 * 60_000, at + 3_600_000),
             ),
             books, zone, today,
         )
