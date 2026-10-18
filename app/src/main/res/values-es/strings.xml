@@ -1,5 +1,5 @@
 <resources>
-    <string name="reader_sync_furthest_known">Posición conocida más avanzada</string>
+    <string name="reader_sync_furthest_known">Lo más lejos leído</string>
     <string name="reader_sync_take_furthest">Ir a la posición más avanzada</string>
     <string name="sort_recent">Recientes</string>
     <string name="sort_title">Título</string>
@@ -346,7 +346,7 @@
     <string name="reader_sync_book_not_synced">Este libro no es uno que el servidor conozca, así que no hay nada que sincronizar.</string>
     <string name="reader_sync_book_moved">Algo se movió mientras eso estaba abierto, así que no se cambió nada. Intenta sincronizar este libro de nuevo.</string>
     <string name="reader_sync_book_kept">Se mantuvo la posición de este dispositivo. Irá al servidor en la próxima sincronización.</string>
-    <string name="reader_sync_book_title">Dos posiciones de lectura</string>
+    <string name="reader_sync_book_title">Desde dónde leer</string>
     <string name="reader_bookorbit_choice_help">Este dispositivo y el servidor guardaron posiciones distintas. La página de fondo muestra la del servidor. Elige desde cuál seguir leyendo y el otro lado se actualizará. Cancelar te devuelve a la posición de este dispositivo sin cambiar nada.</string>
     <string name="reader_bookorbit_take">Conservar la posición del servidor</string>
     <string name="reader_bookorbit_retry">Volver a enviar la posición de este dispositivo</string>
@@ -361,10 +361,14 @@
     <string name="reader_sync_there">En el servidor</string>
     <string name="reader_sync_page">Página %1$d de %2$d</string>
     <string name="reader_sync_near_page">Hacia la página %1$d de %2$d</string>
-    <string name="reader_sync_percent">%1$d%% del camino</string>
+    <string name="reader_sync_percent">%1$d %%</string>
     <string name="reader_sync_take_theirs">Ir a la posición del servidor</string>
     <string name="reader_sync_keep_mine">Conservar la posición de este dispositivo</string>
     <string name="reader_sync_cancel">Cancelar</string>
+    <string name="reader_sync_forget">Olvidar</string>
+    <string name="reader_sync_forget_confirm">¿Olvidar esta posición?</string>
+    <string name="reader_sync_forget_keep">Conservar</string>
+    <string name="reader_sync_furthest_forgotten">Posición más avanzada olvidada.</string>
     <string name="reader_position_not_saved">No se pudo guardar esta posición de lectura. Mantén el libro abierto y pasa otra página para intentarlo de nuevo.</string>
     <string name="server_sync_timeout">El servidor tardó demasiado en responder; las posiciones se sincronizarán más tarde.</string>
     <string name="server_sync_unauthorised">El servidor ya no acepta este inicio de sesión. Vuelve a conectar la cuenta para sincronizar posiciones.</string>

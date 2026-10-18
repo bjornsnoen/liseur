@@ -209,13 +209,14 @@ class LiseurSyncPositionSync(
             return if (known is PreviewOutcome.Ready) known else PreviewOutcome.Failed(SyncFailure.Offline)
         }
 
-        val head = try {
-            latestOp(account, alias.workId)
+        val window = try {
+            latestWindow(account, alias.workId)
         } catch (e: IOException) {
             if (reasonFor(e) != SyncFailure.Offline) return PreviewOutcome.Failed(reasonFor(e))
             val known = knownPreview(account, bookUrl, alias)
             return if (known is PreviewOutcome.Ready) known else PreviewOutcome.Failed(reasonFor(e))
-        } ?: return knownPreview(account, bookUrl, alias)
+        }
+        val head = window.op ?: return knownPreview(account, bookUrl, alias, window.seen)
 
         // This device's own op is an echo, not news: landing it would
         // file our own last push as another device's reading. Nothing is
@@ -257,6 +258,7 @@ class LiseurSyncPositionSync(
                 resolvable = !ours,
                 furthest = destination(account, bookUrl, alias),
                 localLocatorJson = stored?.locatorJson,
+                furthestUptoSeq = maxOf(window.seen, knownSeq(account, alias)),
             ),
         )
     }
@@ -268,7 +270,9 @@ class LiseurSyncPositionSync(
         return knownPreview(account, bookUrl, alias)
     }
 
-    private suspend fun knownPreview(account: Account, bookUrl: String, alias: WorkAlias): PreviewOutcome {
+    private suspend fun knownPreview(
+        account: Account, bookUrl: String, alias: WorkAlias, seen: Long = 0,
+    ): PreviewOutcome {
         val stored = progressDao.get(bookUrl)
         val destination = destination(account, bookUrl, alias)
             ?: return PreviewOutcome.NotSynced
@@ -277,8 +281,15 @@ class LiseurSyncPositionSync(
             accountKey = account.peerId, localRevision = stored?.localRevision,
             resolvable = false, furthest = destination,
             localLocatorJson = stored?.locatorJson,
+            furthestUptoSeq = maxOf(seen, knownSeq(account, alias)),
         ))
     }
+
+    /** The newest server record this device holds for a work, floor included. */
+    private suspend fun knownSeq(account: Account, alias: WorkAlias): Long = maxOf(
+        furthestDao?.forWork(account.peerId, alias.workId).orEmpty().maxOfOrNull { it.seq } ?: 0L,
+        identityDao.furthestFloor(account.peerId, alias.workId) ?: 0L,
+    )
 
     private fun localPeak(
         account: Account, stored: ReadingProgress, alias: WorkAlias,
@@ -345,6 +356,82 @@ class LiseurSyncPositionSync(
         if (!applied) return ResolveOutcome.Superseded
         finishedState.refreshFromProgress(bookUrl)
         return ResolveOutcome.Done
+    }
+
+    /**
+     * Asks the server to forget every furthest position up to [uptoSeq],
+     * then does the same here.
+     *
+     * The server goes first and nothing here changes until it has
+     * answered: a furthest forgotten only on this phone would come back
+     * with the next snapshot. The floor it answers with may be higher
+     * than asked, when another device forgot further already.
+     */
+    override suspend fun forgetFurthestPosition(
+        bookUrl: String, destination: FurthestDestination, uptoSeq: Long, peerId: String?,
+    ): ResolveOutcome {
+        val account = account() ?: return ResolveOutcome.Superseded
+        if (!sameAccount(account) || destination.accountKey != account.peerId) return ResolveOutcome.Superseded
+        val alias = identityDao.alias(bookUrl, account.peerId)?.takeIf { it.usable }
+            ?: return ResolveOutcome.Superseded
+        if (alias.workId != destination.workId || alias.editionSha != destination.localEdition ||
+            destination(account, bookUrl, alias) != destination
+        ) return ResolveOutcome.Superseded
+        if (!networkAvailability.isAvailable()) return ResolveOutcome.Failed(SyncFailure.Offline)
+
+        val answer = try {
+            http.post(
+                LiseurSyncApi.forgetFurthest(account.baseUrl, alias.workId), account.credentials,
+                JSONObject().put("upto_seq", uptoSeq),
+            )
+        } catch (e: IOException) {
+            Log.i(TAG, "Could not forget the furthest position", e)
+            return ResolveOutcome.Failed(reasonFor(e))
+        }
+        val floor = answer.optLong("furthest_floor", -1)
+        if (floor < 0) return ResolveOutcome.Failed(SyncFailure.Malformed)
+        var applied = false
+        forAccount(account) {
+            learnFloor(account, alias.workId, floor, forcedBook = bookUrl)
+            applied = true
+        }
+        return if (applied) ResolveOutcome.Done else ResolveOutcome.Superseded
+    }
+
+    /**
+     * Takes in a floor below which the furthest is forgotten.
+     *
+     * Only a floor that rises does anything, except on the device that
+     * pressed Forget ([forcedBook]), which starts its own peak over
+     * whatever the server says. Elsewhere a peak is started over only
+     * when the server already holds it — then it sits under the floor
+     * and is gone from every device. A peak never sent is newer reading
+     * than the forget and is kept, to be sent and counted.
+     *
+     * Runs inside the caller's transaction.
+     */
+    private suspend fun learnFloor(account: Account, workId: String, floor: Long, forcedBook: String? = null) {
+        val raised = floor > 0 && identityDao.raiseFurthestFloor(account.peerId, workId, floor) > 0
+        if (!raised && forcedBook == null) return
+        furthestDao?.deleteUpTo(account.peerId, workId, floor)
+        for (alias in identityDao.aliasesFor(account.peerId).filter { it.workId == workId }) {
+            val stored = progressDao.get(alias.bookUrl) ?: continue
+            val delivery = furthestDao?.delivered(account.peerId, alias.bookUrl, workId)
+            val held = delivery?.acknowledged == true && delivery.revision == stored.peakRevision
+            if (alias.bookUrl != forcedBook && stored.peakRevision != null && !held) continue
+            progressDao.resetPeak(alias.bookUrl, alias.editionSha)
+            furthestDao?.deleteDelivery(account.peerId, alias.bookUrl, workId)
+        }
+    }
+
+    /** The floors a positions, heads or changes answer carries; see [learnFloor]. */
+    private suspend fun learnFloors(account: Account, response: JSONObject, workId: String?) {
+        if (workId != null) {
+            if (response.has("furthest_floor")) learnFloor(account, workId, response.optLong("furthest_floor"))
+            return
+        }
+        val floors = response.optJSONObject("furthest_floors") ?: return
+        for (work in floors.keys()) learnFloor(account, work, floors.optLong(work))
     }
 
     // One partner already, so there is no peer to narrow to.
@@ -1274,6 +1361,8 @@ class LiseurSyncPositionSync(
             val highWater = page.optLong("high_water", cursor)
             val next = items.maxOfOrNull { it.seq }?.coerceAtLeast(cursor) ?: highWater
 
+            // Forgetting appends no op, so the floor only travels here.
+            forAccount(account) { learnFloors(account, page, workId = null) }
             apply(account, items.mapNotNull(SyncFeedItem::op), next)
             cursor = next
 
@@ -1303,6 +1392,7 @@ class LiseurSyncPositionSync(
             trouble.failed(e, reasonFor(e))
             return false
         }
+        forAccount(account) { learnFloors(account, snapshot, workId = null) }
         apply(
             account,
             feed(snapshot.optJSONArray("ops")).mapNotNull(SyncFeedItem::op),
@@ -1546,6 +1636,7 @@ class LiseurSyncPositionSync(
             }
 
             val batch = queue.removeFirst()
+            rememberPeaksSent(account, batch)
             // A null answer means a recovery rebuilt the batch and it
             // goes back on the queue: nothing from the rejected request
             // is settled.
@@ -1600,10 +1691,7 @@ class LiseurSyncPositionSync(
                                 now = now(),
                             )
                             val local = progressDao.get(item.bookUrl)
-                            if (local != null && local.peakRevision == item.revision &&
-                                local.peakProgression == item.op.progression &&
-                                local.peakLocator == item.op.locatorJson && local.peakAt == item.op.clientTs
-                            ) furthestDao?.acknowledge(PeakDelivery(
+                            if (local != null && carriesPeak(local, item)) furthestDao?.acknowledge(PeakDelivery(
                                 account.peerId, item.bookUrl, item.alias.workId, item.revision, true,
                             ))
                         }
@@ -1637,6 +1725,30 @@ class LiseurSyncPositionSync(
         return pushed
     }
 
+    private fun carriesPeak(local: ReadingProgress, item: PendingPush) =
+        local.peakRevision == item.revision && local.peakProgression == item.op.progression &&
+            local.peakLocator == item.op.locatorJson && local.peakAt == item.op.clientTs
+
+    /**
+     * Keeps the exact op for a current position that is also the peak,
+     * before it is sent. If the answer is lost and the reader then moves
+     * back, [deliverPeak] retries these bytes rather than a fresh peak id.
+     */
+    private suspend fun rememberPeaksSent(account: Account, batch: List<PendingPush>) {
+        val dao = furthestDao ?: return
+        forAccount(account) {
+            for (item in batch) {
+                val local = progressDao.get(item.bookUrl) ?: continue
+                if (!carriesPeak(local, item)) continue
+                if (dao.delivered(account.peerId, item.bookUrl, item.alias.workId)?.revision == item.revision) continue
+                dao.acknowledge(PeakDelivery(
+                    account.peerId, item.bookUrl, item.alias.workId, item.revision,
+                    sentOp = SyncOps.toJson(item.op).toString(),
+                ))
+            }
+        }
+    }
+
     /** Make current owed durably before a peak can become the server's latest op. */
     private suspend fun deliverPeak(account: Account, item: PendingPush, trouble: Trouble): PendingPush? {
         val dao = furthestDao ?: return item
@@ -1660,14 +1772,20 @@ class LiseurSyncPositionSync(
                 progressDao.renameRevision(item.bookUrl, current.localRevision)
             }
             if (!sameAccount(account)) return null
+            // A peak that already went up as the current position is
+            // retried under that op's id and bytes, never under a new one:
+            // the server may hold it, under a floor since raised.
+            val replay = delivery.sentOp?.let(::JSONObject)
+            val sent = replay ?: SyncOps.toJson(peak)
+            val opId = sent.optString("op_id")
             val answer = try {
                 http.post(
                     LiseurSyncApi.url(account.baseUrl, LiseurSyncApi.OPS), account.credentials,
-                    JSONObject().put("ops", JSONArray().put(SyncOps.toJson(peak))),
+                    JSONObject().put("ops", JSONArray().put(sent)),
                     expected = PUSH_REFUSALS,
                 )
             } catch (e: LiseurSyncRejection) {
-                if (e.isUnknownWork && e.workId == peak.workId && e.opId == peak.opId) {
+                if (e.isUnknownWork && e.workId == peak.workId && e.opId == opId) {
                     forAccount(account) {
                         identityDao.deleteAliasIfStale(item.bookUrl, account.peerId, peak.workId)
                     }
@@ -1681,11 +1799,27 @@ class LiseurSyncPositionSync(
                 return null
             }
             val result = answer.optJSONArray("results")?.optJSONObject(0)
-            if (result?.optString("op_id") != peak.opId || result.optString("status") !in ACCEPTED) {
+            if (replay != null && result?.optString("op_id") == opId && result.optString("status") == CONFLICT) {
+                // That id is taken by something else; the peak's own id is next.
+                forAccount(account) { dao.acknowledge(delivery.copy(sentOp = null)) }
+                trouble.refused(SyncFailure.ServerError(LiseurSyncHttp.CONFLICT))
+                return null
+            }
+            if (result?.optString("op_id") != opId || result.optString("status") !in ACCEPTED) {
                 trouble.refused(SyncFailure.Malformed)
                 return null
             }
-            forAccount(account) { dao.acknowledge(delivery.copy(acknowledged = true)) }
+            val seq = result.optLong("seq")
+            forAccount(account) {
+                dao.acknowledge(delivery.copy(acknowledged = true, sentOp = null))
+                // A retry whose first answer was lost can come back as a
+                // duplicate of a peak another device has since forgotten.
+                val floor = identityDao.furthestFloor(account.peerId, peak.workId) ?: 0
+                if (seq in 1..floor && progressDao.get(item.bookUrl)?.peakRevision == revision) {
+                    progressDao.resetPeak(item.bookUrl, item.alias.editionSha)
+                    dao.deleteDelivery(account.peerId, item.bookUrl, peak.workId)
+                }
+            }
         }
         if (!sameAccount(account)) return null
         stored = progressDao.get(item.bookUrl) ?: return null
@@ -2271,18 +2405,27 @@ class LiseurSyncPositionSync(
     private suspend fun latestOp(
         account: Account,
         workId: String,
-    ): SyncOp? {
+    ): SyncOp? = latestWindow(account, workId).op
+
+    /** [latestOp], and the newest sequence anywhere in the answer. */
+    private data class LatestWindow(val op: SyncOp?, val seen: Long)
+
+    private suspend fun latestWindow(account: Account, workId: String): LatestWindow {
         val response = http.get(
             LiseurSyncApi.positions(account.baseUrl, workId, limit = LATEST_WINDOW),
             account.credentials,
         )
         observeResponse(account, response, workId)
-        return feed(response.optJSONArray("ops")).mapNotNull(SyncFeedItem::op)
-            .filter { it.workId == workId }.maxByOrNull(SyncOp::seq)
+        val ops = feed(response.optJSONArray("ops"))
+        return LatestWindow(
+            op = ops.mapNotNull(SyncFeedItem::op).filter { it.workId == workId }.maxByOrNull(SyncOp::seq),
+            seen = (ops + feed(response.optJSONArray("furthest"))).maxOfOrNull(SyncFeedItem::seq) ?: 0L,
+        )
     }
 
     private suspend fun observeResponse(account: Account, response: JSONObject, workId: String? = null) {
         forAccount(account) {
+            learnFloors(account, response, workId)
             if (completeFurthest(response, workId)) {
                 if (workId == null) furthestDao?.deleteObservations(account.peerId)
                 else furthestDao?.deleteWork(account.peerId, workId)
@@ -2297,6 +2440,9 @@ class LiseurSyncPositionSync(
     }
 
     private suspend fun observe(account: Account, op: SyncOp, retained: Boolean = false) {
+        // The recent window and a lagging cursor both still carry what was forgotten.
+        val floor = identityDao.furthestFloor(account.peerId, op.workId) ?: 0L
+        if (floor > 0 && op.seq <= floor) return
         val payload = op.originalJson ?: SyncOps.toJson(op).toString()
         furthestDao?.observe(FurthestPosition(
             peerId = account.peerId, workId = op.workId, edition = op.editionSha.orEmpty(),

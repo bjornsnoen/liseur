@@ -119,4 +119,44 @@ object BookSyncChoice {
             target.locatorJson, preview.remoteLocatorJson,
         ) ?: (target.locatorJson == preview.remoteLocatorJson)
     }
+
+    /**
+     * Whether the server's current position earns a place of its own.
+     *
+     * Only when it can be taken: a position that is this device's own
+     * echo has nothing to adopt, and one the furthest already shows would
+     * be the same place twice.
+     */
+    fun showsRemote(preview: SyncPreview, offersFurthest: Boolean): Boolean =
+        preview.remote != null && preview.resolvable && !preview.agrees &&
+            (!offersFurthest || !furthestMatchesRemote(preview))
+
+    /**
+     * The answers on offer, the one most likely wanted first.
+     *
+     * The furthest leads when it is offered, since asking for it is why
+     * it is shown. Otherwise the server leads only when it has read
+     * further; on the same page, staying put is the safer default.
+     */
+    fun actions(
+        preview: SyncPreview,
+        relation: SyncRelation,
+        offersFurthest: Boolean,
+    ): List<BookSyncAction> {
+        val theirs = showsRemote(preview, offersFurthest)
+        val mine = preview.resolvable && !preview.agrees
+        return buildList {
+            if (offersFurthest) add(BookSyncAction.FURTHEST)
+            if (relation == SyncRelation.AHEAD) {
+                if (theirs) add(BookSyncAction.THEIRS)
+                if (mine) add(BookSyncAction.MINE)
+            } else {
+                if (mine) add(BookSyncAction.MINE)
+                if (theirs) add(BookSyncAction.THEIRS)
+            }
+        }
+    }
 }
+
+/** One answer the manual sync dialog can give. */
+enum class BookSyncAction { FURTHEST, THEIRS, MINE }

@@ -709,20 +709,32 @@ class ReaderViewModel(
             BookSyncVerdict.Owed -> keptHere()
 
             is BookSyncVerdict.Ask -> BookSync.Choice(
-                here = point(preview.local ?: 0.0),
+                here = point(preview.local ?: 0.0, chapter = chapterOf(preview.localLocatorJson)),
                 there = point(
                     progression = preview.remote ?: 0.0,
                     at = preview.remoteAt,
                     excerpt = preview.excerpt,
                     confidence = preview.confidence,
+                    chapter = chapterOf(preview.remoteLocatorJson),
                 ),
                 relation = verdict.relation,
                 preview = preview,
                 furthest = preview.furthest?.takeIf { BookSyncChoice.offersFurthest(preview) }?.let {
-                    point(it.progression, it.at, ExactLocatorAnchor.excerpt(it.locatorJson), it.confidence)
+                    point(
+                        it.progression, it.at, ExactLocatorAnchor.excerpt(it.locatorJson), it.confidence,
+                        chapter = chapterOf(it.locatorJson),
+                    )
                 },
             )
         }
+
+    /** The chapter a stored place falls in, as this book names it. */
+    private fun chapterOf(locatorJson: String?): String? {
+        val locator = locatorJson
+            ?.let { runCatching { Locator.fromJSON(JSONObject(it)) }.getOrNull() }
+            ?: return null
+        return progressAt(locator)?.chapterTitle ?: locator.title
+    }
 
     /**
      * One side, said in pages where the book has been laid out and as a
@@ -735,13 +747,18 @@ class ReaderViewModel(
         at: Long? = null,
         excerpt: String? = null,
         confidence: ResumeConfidence = ResumeConfidence.APPROXIMATE,
+        chapter: String? = null,
     ): SyncPoint {
         val positions = bookPositions?.takeIf { it.isUsable }
+        val page = positions?.positionAtProgression(progression.toFloat())
         return SyncPoint(
             progression = progression,
-            page = positions?.positionAtProgression(progression.toFloat()),
+            page = page,
             totalPages = positions?.totalPositions,
             at = at,
+            // A stored place without a usable locator still falls in the
+            // chapter of the page it is shown at.
+            chapter = chapter ?: page?.let { positions?.chapterAt(it)?.title },
             excerpt = excerpt,
             confidence = confidence,
         )
@@ -790,6 +807,41 @@ class ReaderViewModel(
                     BookSync.Idle
                 } else {
                     keptHere()
+                }
+            }
+        }
+    }
+
+    /**
+     * Forgets the furthest position offered, then asks the question again
+     * without it.
+     *
+     * Asked afresh rather than by dropping the card, because the server
+     * has just been written to and this device's place may have been
+     * saved on the way. If the two current positions still differ, that
+     * choice is put straight back; otherwise the reader is told it is
+     * done and an ordinary sync settles the rest.
+     */
+    fun forgetFurthest() {
+        val preview = (_bookSync.value as? BookSync.Choice)?.preview ?: return
+        if (preview.furthest == null) return
+        _bookSync.value = BookSync.Asking
+        viewModelScope.launch {
+            if (!preparePositionAction() || !positionPublisher.flush(bookId)) {
+                _bookSync.value = BookSync.Note(R.string.reader_position_not_saved)
+                return@launch
+            }
+            when (val outcome = positionSync.forgetFurthest(bookId, preview)) {
+                ResolveOutcome.Superseded -> _bookSync.value = BookSync.Note(R.string.reader_sync_book_moved)
+                is ResolveOutcome.Failed -> _bookSync.value = BookSync.Note(outcome.reason.messageRes())
+                ResolveOutcome.Done -> {
+                    val again = (positionSync.preview(bookId) as? PreviewOutcome.Ready)?.preview
+                    if (again != null && BookSyncChoice.decide(again) is BookSyncVerdict.Ask) {
+                        _bookSync.value = put(again)
+                    } else {
+                        _bookSync.value = BookSync.Note(R.string.reader_sync_furthest_forgotten)
+                        requestBookSync(bookId)
+                    }
                 }
             }
         }

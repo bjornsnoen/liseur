@@ -255,6 +255,7 @@ class ReaderActivity : FragmentActivity() {
                         onResolve = viewModel::resolveBookSync,
                         onDismiss = viewModel::dismissBookSync,
                         onFurthest = viewModel::resolveFurthest,
+                        onForgetFurthest = viewModel::forgetFurthest,
                     )
                     // Only over a book that is actually on screen. Asked
                     // during the spinner it would be a question about a

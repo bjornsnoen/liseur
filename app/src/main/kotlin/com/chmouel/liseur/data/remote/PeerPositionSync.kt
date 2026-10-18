@@ -118,6 +118,11 @@ class CompositePositionSync(private val peers: List<PeerPositionSync>) : Positio
     ): ResolveOutcome = peers.singleOrNull { it.peerId == peerId }
         ?.takeFurthestPosition(bookUrl, atRevision, destination) ?: ResolveOutcome.Superseded
 
+    override suspend fun forgetFurthestPosition(
+        bookUrl: String, destination: FurthestDestination, uptoSeq: Long, peerId: String?,
+    ): ResolveOutcome = peers.singleOrNull { it.peerId == peerId }
+        ?.forgetFurthestPosition(bookUrl, destination, uptoSeq) ?: ResolveOutcome.Superseded
+
     override suspend fun keepLocalPosition(bookUrl: String, peerId: String?): ResolveOutcome =
         resolve(bookUrl, peerId) { it.keepLocalPosition(bookUrl) }
 

@@ -1,5 +1,5 @@
 <resources>
-    <string name="reader_sync_furthest_known">Furthest known position</string>
+    <string name="reader_sync_furthest_known">Furthest read</string>
     <string name="reader_sync_take_furthest">Go to furthest</string>
     <string name="app_name" translatable="false">Liseur</string>
 
@@ -364,7 +364,7 @@
     <string name="reader_sync_book_not_synced">This book is not one the server knows about, so there is nothing to sync.</string>
     <string name="reader_sync_book_moved">Something moved while that was open, so nothing was changed. Try syncing this book again.</string>
     <string name="reader_sync_book_kept">Kept this device\'s position. It will go to the server on the next sync.</string>
-    <string name="reader_sync_book_title">Two reading positions</string>
+    <string name="reader_sync_book_title">Where to read from</string>
     <string name="reader_bookorbit_choice_help">This device and the server saved different places. The page behind shows the server\'s place. Choose the one to keep reading from, and the other side is updated. Cancel takes you back to this device\'s place and changes nothing.</string>
     <string name="reader_bookorbit_take">Keep the server\'s place</string>
     <string name="reader_bookorbit_retry">Send this device\'s place again</string>
@@ -379,10 +379,14 @@
     <string name="reader_sync_there">On the server</string>
     <string name="reader_sync_page">Page %1$d of %2$d</string>
     <string name="reader_sync_near_page">Around page %1$d of %2$d</string>
-    <string name="reader_sync_percent">%1$d%% of the way through</string>
+    <string name="reader_sync_percent">%1$d%%</string>
     <string name="reader_sync_take_theirs">Go to the server\'s position</string>
     <string name="reader_sync_keep_mine">Keep this device\'s position</string>
     <string name="reader_sync_cancel">Cancel</string>
+    <string name="reader_sync_forget">Forget</string>
+    <string name="reader_sync_forget_confirm">Forget this position?</string>
+    <string name="reader_sync_forget_keep">Keep</string>
+    <string name="reader_sync_furthest_forgotten">Furthest position forgotten.</string>
     <string name="reader_position_not_saved">This reading position could not be saved. Keep the book open and turn another page to try again.</string>
     <string name="server_sync_timeout">The server took too long to answer; positions will sync later.</string>
     <string name="server_sync_unauthorised">The server no longer accepts this sign-in. Reconnect the account to sync positions again.</string>

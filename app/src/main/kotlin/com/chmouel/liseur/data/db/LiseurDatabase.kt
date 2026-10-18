@@ -42,7 +42,7 @@ import androidx.sqlite.execSQL
         RemoteStatsWindow::class,
         GlossaryEntry::class,
     ],
-    version = 67,
+    version = 68,
     exportSchema = true,
 )
 abstract class LiseurDatabase : RoomDatabase() {
@@ -81,6 +81,15 @@ abstract class LiseurDatabase : RoomDatabase() {
     abstract fun glossaryDao(): GlossaryDao
 
     companion object {
+        val MIGRATION_67_68 = object : Migration(67, 68) {
+            override fun migrate(connection: SQLiteConnection) {
+                connection.execSQL(
+                    "ALTER TABLE work_alias ADD COLUMN furthest_floor INTEGER NOT NULL DEFAULT 0",
+                )
+                connection.execSQL("ALTER TABLE peak_delivery ADD COLUMN sent_op TEXT")
+            }
+        }
+
         val MIGRATION_66_67 = object : Migration(66, 67) {
             override fun migrate(connection: SQLiteConnection) {
                 connection.execSQL(
@@ -1955,6 +1964,7 @@ abstract class LiseurDatabase : RoomDatabase() {
             MIGRATION_64_65,
             MIGRATION_65_66,
             MIGRATION_66_67,
+            MIGRATION_67_68,
         )
     }
 }

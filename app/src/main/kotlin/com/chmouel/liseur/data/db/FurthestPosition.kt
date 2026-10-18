@@ -38,6 +38,12 @@ data class PeakDelivery(
     @ColumnInfo(name = "work_id") val workId: String,
     val revision: Long,
     val acknowledged: Boolean = false,
+    /**
+     * The exact op sent when this peak went up as the current position.
+     * A lost answer is retried with these bytes, so the server can name
+     * the seq it already holds rather than take the peak again.
+     */
+    @ColumnInfo(name = "sent_op") val sentOp: String? = null,
 )
 
 @Dao
@@ -72,6 +78,13 @@ abstract class FurthestPositionDao {
 
     @Query("DELETE FROM peak_delivery WHERE peer_id = :peer")
     abstract suspend fun deleteDeliveries(peer: String)
+
+    /** Drops what was seen at or below a forgotten floor. */
+    @Query("DELETE FROM furthest_position WHERE peer_id = :peer AND work_id = :work AND seq <= :floor")
+    abstract suspend fun deleteUpTo(peer: String, work: String, floor: Long)
+
+    @Query("DELETE FROM peak_delivery WHERE peer_id = :peer AND book_url = :book AND work_id = :work")
+    abstract suspend fun deleteDelivery(peer: String, book: String, work: String)
 
     @Transaction
     open suspend fun forgetPeer(peer: String) {

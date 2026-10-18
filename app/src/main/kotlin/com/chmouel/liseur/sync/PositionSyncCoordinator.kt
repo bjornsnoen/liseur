@@ -281,6 +281,12 @@ class PositionSyncCoordinator(
             sync.takeFurthestPosition(bookUrl, preview.localRevision ?: 0, target, preview.peerId)
         }
 
+    suspend fun forgetFurthest(bookUrl: String, preview: com.chmouel.liseur.data.remote.SyncPreview): ResolveOutcome =
+        turn.withLock {
+            val target = preview.furthest ?: return@withLock ResolveOutcome.Superseded
+            sync.forgetFurthestPosition(bookUrl, target, preview.furthestUptoSeq, preview.peerId)
+        }
+
     /**
      * Acts on what someone chose after being shown both positions.
      *

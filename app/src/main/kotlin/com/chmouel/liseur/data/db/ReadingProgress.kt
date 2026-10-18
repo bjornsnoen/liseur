@@ -165,6 +165,24 @@ abstract class ReadingProgressDao {
     @Query("SELECT * FROM reading_progress WHERE book_url = :bookUrl")
     abstract suspend fun get(bookUrl: String): ReadingProgress?
 
+    /**
+     * Starts the furthest over from where this device is now, as if
+     * nothing further had ever been read. The current place keeps its
+     * revision, so it is still an authored peak if the reader goes back.
+     */
+    @Query(
+        """
+        UPDATE reading_progress SET
+            peak_progression = total_progression,
+            peak_locator = CASE WHEN total_progression IS NULL THEN NULL ELSE locator_json END,
+            peak_at = CASE WHEN total_progression IS NULL THEN NULL ELSE updated_at END,
+            peak_revision = CASE WHEN total_progression IS NULL THEN NULL ELSE local_revision END,
+            peak_edition = CASE WHEN total_progression IS NULL THEN NULL ELSE :edition END
+        WHERE book_url = :bookUrl
+        """,
+    )
+    abstract suspend fun resetPeak(bookUrl: String, edition: String?)
+
     @Query(
         """
         UPDATE reading_progress SET

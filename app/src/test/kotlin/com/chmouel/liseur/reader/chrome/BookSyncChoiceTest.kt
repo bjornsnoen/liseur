@@ -31,6 +31,43 @@ class BookSyncChoiceTest {
     }
 
     @Test
+    fun `the answer leading the dialog is the furthest, else the side read further`() {
+        val ahead = SyncPreview(0.3, 0.6, 1)
+        assertEquals(
+            listOf(BookSyncAction.THEIRS, BookSyncAction.MINE),
+            BookSyncChoice.actions(ahead, SyncRelation.AHEAD, offersFurthest = false),
+        )
+        val behind = SyncPreview(0.6, 0.3, 1)
+        assertEquals(
+            listOf(BookSyncAction.MINE, BookSyncAction.THEIRS),
+            BookSyncChoice.actions(behind, SyncRelation.BEHIND, offersFurthest = false),
+        )
+        assertEquals(
+            listOf(BookSyncAction.MINE, BookSyncAction.THEIRS),
+            BookSyncChoice.actions(
+                SyncPreview(0.3, 0.3, 1, exactPositionAgreement = false),
+                SyncRelation.SAME_PAGE,
+                offersFurthest = false,
+            ),
+        )
+        val target = com.chmouel.liseur.data.remote.FurthestDestination(
+            "account", "work", "edition", "op", 0.9, null, 1, ResumeConfidence.APPROXIMATE,
+        )
+        assertEquals(
+            listOf(BookSyncAction.FURTHEST, BookSyncAction.MINE, BookSyncAction.THEIRS),
+            BookSyncChoice.actions(behind.copy(furthest = target), SyncRelation.BEHIND, offersFurthest = true),
+        )
+    }
+
+    @Test
+    fun `a server position that is only this device's echo gets no card of its own`() {
+        val echo = SyncPreview(0.3, 0.6, 1, resolvable = false)
+
+        assertFalse(BookSyncChoice.showsRemote(echo, offersFurthest = true))
+        assertEquals(emptyList<BookSyncAction>(), BookSyncChoice.actions(echo, SyncRelation.AHEAD, false))
+    }
+
+    @Test
     fun `no remote position is nothing to sync with`() {
         val verdict = BookSyncChoice.decide(SyncPreview(local = 0.4, remote = null, remoteAt = null))
 

@@ -1988,6 +1988,156 @@ class LiseurSyncPositionSyncTest {
     }
 
     @Test
+    fun `forgetting the furthest asks the server, then drops the peak here and stays dropped`() = runTest {
+        connect()
+        db.bookDao().upsert(local())
+        alias(editionSha = "edition")
+        db.readingProgressDao().recordLocal(LOCAL, LOCATOR, 0.31, null, "reading", NOW)
+        server.enqueue(json("""{"ops":[${op(5, 0.31)}],"furthest":[${op(3, 0.98, locatorJson = LOCATOR, editionSha = "edition")}]}"""))
+        val syncing = sync(furthest = true)
+        val preview = (syncing.previewBook(LOCAL) as PreviewOutcome.Ready).preview
+        assertEquals(0.98, preview.furthest!!.progression, 0.0)
+        assertEquals(5, preview.furthestUptoSeq)
+
+        server.enqueue(json("""{"furthest_floor":5}"""))
+        assertEquals(
+            ResolveOutcome.Done,
+            syncing.forgetFurthestPosition(LOCAL, preview.furthest!!, preview.furthestUptoSeq),
+        )
+        val sent = requests().last { it.target.contains("/furthest/forget") }
+        assertEquals("POST", sent.method)
+        assertEquals(5, JSONObject(sent.body!!.utf8()).getLong("upto_seq"))
+        assertTrue(db.furthestPositionDao().forWork(peer(), "w-1").isEmpty())
+        assertEquals(0.31, db.readingProgressDao().get(LOCAL)!!.peakProgression!!, 0.0)
+
+        // The recent window still carries the forgotten op; it must not come back.
+        server.enqueue(json("""{"ops":[${op(3, 0.98, locatorJson = LOCATOR, editionSha = "edition")},${op(5, 0.31)}],"furthest_floor":5}"""))
+        val again = (syncing.previewBook(LOCAL) as PreviewOutcome.Ready).preview
+        assertNull(again.furthest?.takeIf { it.progression > 0.31 })
+    }
+
+    @Test
+    fun `a floor learnt from another device keeps a peak not yet sent`() = runTest {
+        connect()
+        db.bookDao().upsert(local())
+        alias(editionSha = "edition")
+        db.readingProgressDao().recordLocal(LOCAL, LOCATOR, 0.6, null, "reading", NOW)
+        db.readingProgressDao().recordLocal(LOCAL, LOCATOR, 0.4, null, "reading", NOW + 1)
+        server.enqueue(json("""{"ops":[${op(9, 0.4, "other")}],"furthest":[${op(2, 0.9, "other")}],"furthest_floor":8}"""))
+        val preview = (sync(furthest = true).previewBook(LOCAL) as PreviewOutcome.Ready).preview
+        assertEquals(0.6, preview.furthest!!.progression, 0.0)
+        assertEquals(0.6, db.readingProgressDao().get(LOCAL)!!.peakProgression!!, 0.0)
+    }
+
+    @Test
+    fun `a device caught up on the feed learns a floor from an empty changes page`() = runTest {
+        connect(cursor = 5)
+        db.bookDao().upsert(local())
+        alias(editionSha = "edition")
+        db.readingProgressDao().recordLocal(LOCAL, LOCATOR, 0.98, null, "reading", NOW)
+        db.readingProgressDao().recordLocal(LOCAL, LOCATOR, 0.31, null, "reading", NOW + 1)
+        val peakRevision = db.readingProgressDao().get(LOCAL)!!.peakRevision!!
+        db.furthestPositionDao().acknowledge(
+            com.chmouel.liseur.data.db.PeakDelivery(peer(), LOCAL, "w-1", peakRevision, true),
+        )
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse =
+                if (request.target.startsWith("/v1/ops")) {
+                    applied(request)
+                } else {
+                    json("""{"ops":[],"high_water":5,"has_more":false,"furthest_floors":{"w-1":5}}""")
+                }
+        }
+        assertEquals(SyncOutcome.Success, sync(furthest = true).syncBook(LOCAL))
+        assertEquals(5L, db.workIdentityDao().furthestFloor(peer(), "w-1"))
+        assertEquals(0.31, db.readingProgressDao().get(LOCAL)!!.peakProgression!!, 0.0)
+    }
+
+    @Test
+    fun `a retried peak answered as a duplicate under the floor is forgotten here too`() = runTest {
+        connect()
+        db.bookDao().upsert(local())
+        alias(editionSha = "edition")
+        db.readingProgressDao().recordLocal(LOCAL, LOCATOR, 0.98, null, "reading", NOW)
+        db.readingProgressDao().recordLocal(LOCAL, LOCATOR, 0.31, null, "reading", NOW + 1)
+        // The first upload landed as seq 3 but its answer was lost; meanwhile
+        // another device forgot up to 5, and this one already heard of it.
+        db.workIdentityDao().raiseFurthestFloor(peer(), "w-1", 5)
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                if (!request.target.startsWith("/v1/ops")) {
+                    return json("""{"ops":[],"high_water":6,"furthest_floors":{"w-1":5}}""")
+                }
+                val operation = JSONObject(request.body!!.utf8()).getJSONArray("ops").getJSONObject(0)
+                if (operation.getDouble("progression") != 0.98) return applied(request)
+                return json("""{"results":[{"op_id":"${operation.getString("op_id")}","status":"duplicate","seq":3}]}""")
+            }
+        }
+        assertEquals(SyncOutcome.Success, sync(furthest = true).syncBook(LOCAL))
+        // The current place becomes the peak, and is what is acknowledged now.
+        val stored = db.readingProgressDao().get(LOCAL)!!
+        assertEquals(0.31, stored.peakProgression!!, 0.0)
+        assertEquals(stored.localRevision, db.furthestPositionDao().delivered(peer(), LOCAL, "w-1")!!.revision)
+    }
+
+    @Test
+    fun `a peak first sent as the current position is retried under that id, not a new peak id`() = runTest {
+        connect()
+        db.bookDao().upsert(local())
+        alias(editionSha = "edition")
+        db.readingProgressDao().recordLocal(LOCAL, LOCATOR, 0.98, null, "reading", NOW)
+        val held = java.util.concurrent.ConcurrentHashMap<String, Long>()
+        val created = java.util.Collections.synchronizedList(mutableListOf<Double>())
+        var loseAnswer = true
+        var floors = "{}"
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                if (!request.target.startsWith("/v1/ops")) {
+                    return json("""{"ops":[],"high_water":${held.size},"furthest_floors":$floors}""")
+                }
+                val operation = JSONObject(request.body!!.utf8()).getJSONArray("ops").getJSONObject(0)
+                val id = operation.getString("op_id")
+                val known = held[id]
+                if (known != null) {
+                    return json("""{"results":[{"op_id":"$id","status":"duplicate","seq":$known}]}""")
+                }
+                held[id] = held.size + 1L
+                created += operation.getDouble("progression")
+                if (loseAnswer) {
+                    loseAnswer = false
+                    return MockResponse(code = 503)
+                }
+                return json("""{"results":[{"op_id":"$id","status":"applied","seq":${held[id]}}]}""")
+            }
+        }
+        assertTrue(sync(furthest = true).syncBook(LOCAL) is SyncOutcome.Failure)
+        assertEquals(listOf(0.98), created.toList())
+
+        // Back to 31% here, while another device forgets everything so far.
+        db.readingProgressDao().recordLocal(LOCAL, LOCATOR, 0.31, null, "reading", NOW + 1)
+        floors = """{"w-1":1}"""
+        assertEquals(SyncOutcome.Success, sync(furthest = true).syncBook(LOCAL))
+        assertEquals(listOf(0.98, 0.31), created.toList())
+        assertEquals(0.31, db.readingProgressDao().get(LOCAL)!!.peakProgression!!, 0.0)
+    }
+
+    @Test
+    fun `an old server without the forget route changes nothing here`() = runTest {
+        connect()
+        db.bookDao().upsert(local())
+        alias(editionSha = "edition")
+        db.readingProgressDao().recordLocal(LOCAL, LOCATOR, 0.31, null, "reading", NOW)
+        server.enqueue(json("""{"ops":[],"furthest":[${op(3, 0.98, locatorJson = LOCATOR, editionSha = "edition")}]}"""))
+        val syncing = sync(furthest = true)
+        val preview = (syncing.previewBook(LOCAL) as PreviewOutcome.Ready).preview
+        server.enqueue(MockResponse(code = 404, body = """{"error":"not found"}"""))
+        assertTrue(
+            syncing.forgetFurthestPosition(LOCAL, preview.furthest!!, preview.furthestUptoSeq) is ResolveOutcome.Failed,
+        )
+        assertEquals(1, db.furthestPositionDao().forWork(peer(), "w-1").size)
+    }
+
+    @Test
     fun `historical adoption is bound to account work and edition`() = runTest {
         connect()
         db.bookDao().upsert(local())

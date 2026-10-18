@@ -92,6 +92,14 @@ data class WorkAlias(
      */
     @ColumnInfo(name = "annotations_reconciled_at", defaultValue = "0")
     val annotationsReconciledAt: Long = 0,
+    /**
+     * The last server sequence whose furthest positions were forgotten.
+     *
+     * A peak recorded at or below it is no longer offered as the
+     * furthest, here or anywhere else; the server says so in every
+     * snapshot, and this is how far this device has heard.
+     */
+    @ColumnInfo(name = "furthest_floor", defaultValue = "0") val furthestFloor: Long = 0,
     @ColumnInfo(name = "resolved_at") val resolvedAt: Long,
 ) {
     /** Whether reading may be exchanged under this name yet. */
@@ -211,6 +219,21 @@ interface WorkIdentityDao {
         """,
     )
     suspend fun markAnnotationsReconciled(bookUrl: String, peerId: String, at: Long)
+
+    /**
+     * Raises the forgotten-furthest floor for every book under this
+     * work, never lowers it. Returns how many names it raised.
+     */
+    @Query(
+        """
+        UPDATE work_alias SET furthest_floor = :floor
+        WHERE peer_id = :peerId AND work_id = :workId AND furthest_floor < :floor
+        """,
+    )
+    suspend fun raiseFurthestFloor(peerId: String, workId: String, floor: Long): Int
+
+    @Query("SELECT MAX(furthest_floor) FROM work_alias WHERE peer_id = :peerId AND work_id = :workId")
+    suspend fun furthestFloor(peerId: String, workId: String): Long?
 
     /**
      * Forgets when annotations were reconciled, so the next run asks

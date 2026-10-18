@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="reader_sync_furthest_known">已知最远的位置</string>
+    <string name="reader_sync_furthest_known">读到最远处</string>
     <string name="reader_sync_take_furthest">转到最远处</string>
     <plurals name="library_book_count">
         <item quantity="other">%d 本图书</item>
@@ -409,7 +409,7 @@
     <string name="reader_sync_book_not_synced">服务器不认识这本书，因此没有可同步的内容。</string>
     <string name="reader_sync_book_moved">打开期间进度发生了变化，因此未做任何更改。请再次同步这本书。</string>
     <string name="reader_sync_book_kept">已保留本设备的进度，将在下次同步时上传到服务器。</string>
-    <string name="reader_sync_book_title">两个阅读进度</string>
+    <string name="reader_sync_book_title">从哪里继续阅读</string>
     <string name="reader_bookorbit_choice_help">本设备与服务器保存的位置不同。后面的页面显示的是服务器上的位置。选择要继续阅读的位置，另一侧会被更新。取消则回到本设备的位置，不做任何更改。</string>
     <string name="reader_bookorbit_take">保留服务器的位置</string>
     <string name="reader_bookorbit_retry">再次发送本设备的位置</string>
@@ -424,10 +424,14 @@
     <string name="reader_sync_there">服务器</string>
     <string name="reader_sync_page">第 %1$d 页，共 %2$d 页</string>
     <string name="reader_sync_near_page">大约第 %1$d 页，共 %2$d 页</string>
-    <string name="reader_sync_percent">已读 %1$d%%</string>
+    <string name="reader_sync_percent">%1$d%%</string>
     <string name="reader_sync_take_theirs">转到服务器的位置</string>
     <string name="reader_sync_keep_mine">保留本设备的位置</string>
     <string name="reader_sync_cancel">取消</string>
+    <string name="reader_sync_forget">忘记</string>
+    <string name="reader_sync_forget_confirm">忘记这个位置？</string>
+    <string name="reader_sync_forget_keep">保留</string>
+    <string name="reader_sync_furthest_forgotten">已忘记最远位置。</string>
     <string name="reader_position_not_saved">此阅读位置无法保存。请保持书本打开并再翻一页以重试。</string>
     <string name="server_sync_timeout">服务器响应超时，阅读进度将在稍后同步。</string>
     <string name="server_sync_unauthorised">服务器不再接受此登录凭据。请重新连接账户以恢复进度同步。</string>

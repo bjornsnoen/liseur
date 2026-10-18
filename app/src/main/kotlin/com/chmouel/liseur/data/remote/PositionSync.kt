@@ -148,6 +148,11 @@ data class SyncPreview(
     val resolvable: Boolean = true,
     val furthest: FurthestDestination? = null,
     val localLocatorJson: String? = null,
+    /**
+     * The newest server record this preview saw, so forgetting the
+     * furthest never swallows a page another device sent after it.
+     */
+    val furthestUptoSeq: Long = 0,
 ) {
     /** True when there is nothing to choose between. */
     val agrees: Boolean
@@ -264,6 +269,16 @@ sealed interface PreviewOutcome {
 interface PositionSync {
     suspend fun takeFurthestPosition(
         bookUrl: String, atRevision: Long, destination: FurthestDestination, peerId: String? = null,
+    ): ResolveOutcome = ResolveOutcome.Superseded
+
+    /**
+     * Forgets the furthest position, on the server and here, so no device
+     * offers it again. Every peak up to [uptoSeq] goes; reading recorded
+     * after it counts again. Refused as [ResolveOutcome.Superseded] when
+     * [destination] is no longer what this book would offer.
+     */
+    suspend fun forgetFurthestPosition(
+        bookUrl: String, destination: FurthestDestination, uptoSeq: Long, peerId: String? = null,
     ): ResolveOutcome = ResolveOutcome.Superseded
 
     /**

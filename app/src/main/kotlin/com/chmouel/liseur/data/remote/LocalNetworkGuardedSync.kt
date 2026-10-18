@@ -84,6 +84,16 @@ class LocalNetworkGuardedSync(
             delegate.keepLocalPosition(bookUrl, peerId)
         }
 
+    /** Forgetting the furthest asks the server first, so it dials. */
+    override suspend fun forgetFurthestPosition(
+        bookUrl: String, destination: FurthestDestination, uptoSeq: Long, peerId: String?,
+    ): ResolveOutcome =
+        if (blocked()) {
+            ResolveOutcome.Failed(SyncFailure.LocalNetworkBlocked)
+        } else {
+            delegate.forgetFurthestPosition(bookUrl, destination, uptoSeq, peerId)
+        }
+
     private suspend fun blocked(): Boolean = access.blocks(delegate.dialledAddress())
 
     private fun refuse(): SyncOutcome {

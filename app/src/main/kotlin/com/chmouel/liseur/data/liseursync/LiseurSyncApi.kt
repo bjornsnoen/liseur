@@ -83,6 +83,10 @@ object LiseurSyncApi {
      */
     fun heads(baseUrl: String): String = url(baseUrl, HEADS)
 
+    /** Forgets every furthest position up to a sequence (liseur-sync ADR-0054). */
+    fun forgetFurthest(baseUrl: String, workId: String): String =
+        url(baseUrl, "/v1/works/${pathSegment(workId)}/furthest/forget")
+
     /** One page of the annotation feed, tombstones included (ADR-0028). */
     fun annotationChanges(baseUrl: String, since: Long, limit: Int): String =
         url(baseUrl, "$ANNOTATIONS/changes?since=$since&limit=$limit")

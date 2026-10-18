@@ -1,5 +1,5 @@
 <resources>
-    <string name="reader_sync_furthest_known">Weiteste bekannte Leseposition</string>
+    <string name="reader_sync_furthest_known">Am weitesten gelesen</string>
     <string name="reader_sync_take_furthest">Zur weitesten Leseposition</string>
     <string name="sort_recent">Zuletzt</string>
     <string name="sort_title">Titel</string>
@@ -349,7 +349,7 @@
     <string name="reader_sync_book_not_synced">Dieses Buch kennt der Server nicht, deshalb gibt es nichts zu synchronisieren.</string>
     <string name="reader_sync_book_moved">Während das offen war, hat sich etwas bewegt, deshalb wurde nichts geändert. Versuche, dieses Buch erneut zu synchronisieren.</string>
     <string name="reader_sync_book_kept">Position dieses Geräts behalten. Sie geht beim nächsten Sync zum Server.</string>
-    <string name="reader_sync_book_title">Zwei Lesepositionen</string>
+    <string name="reader_sync_book_title">Wo weiterlesen</string>
     <string name="reader_bookorbit_choice_help">Dieses Gerät und der Server haben verschiedene Lesestellen gespeichert. Die Seite dahinter zeigt die des Servers. Wähle, wo du weiterlesen möchtest, dann wird die andere Seite aktualisiert. Abbrechen bringt dich zur Lesestelle dieses Geräts zurück und ändert nichts.</string>
     <string name="reader_bookorbit_take">Lesestelle des Servers behalten</string>
     <string name="reader_bookorbit_retry">Lesestelle dieses Geräts erneut senden</string>
@@ -364,10 +364,14 @@
     <string name="reader_sync_there">Auf dem Server</string>
     <string name="reader_sync_page">Seite %1$d von %2$d</string>
     <string name="reader_sync_near_page">Etwa Seite %1$d von %2$d</string>
-    <string name="reader_sync_percent">%1$d%% durch</string>
+    <string name="reader_sync_percent">%1$d %%</string>
     <string name="reader_sync_take_theirs">Zur Position des Servers gehen</string>
     <string name="reader_sync_keep_mine">Position dieses Geräts behalten</string>
     <string name="reader_sync_cancel">Abbrechen</string>
+    <string name="reader_sync_forget">Vergessen</string>
+    <string name="reader_sync_forget_confirm">Diese Position vergessen?</string>
+    <string name="reader_sync_forget_keep">Behalten</string>
+    <string name="reader_sync_furthest_forgotten">Weiteste Position vergessen.</string>
     <string name="reader_position_not_saved">Diese Leseposition konnte nicht gespeichert werden. Lass das Buch offen und blättere eine Seite weiter, um es erneut zu versuchen.</string>
     <string name="server_sync_timeout">Der Server hat zu lange gebraucht; Positionen synchronisieren später.</string>
     <string name="server_sync_unauthorised">Der Server akzeptiert diese Anmeldung nicht mehr. Verbinde das Konto erneut, um Positionen wieder zu synchronisieren.</string>

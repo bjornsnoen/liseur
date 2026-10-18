@@ -282,6 +282,7 @@ class WorkResolver(
             } else {
                 0
             },
+            furthestFloor = if (sameWork) existing?.furthestFloor ?: 0 else 0,
             // A low answer registers nothing server-side, so it still
             // owes the one re-resolve that carries the reader's yes —
             // the same debt the identifier path tracks with this flag.
@@ -497,6 +498,7 @@ class WorkResolver(
             } else {
                 0
             },
+            furthestFloor = if (sameWork) existing?.furthestFloor ?: 0 else 0,
             // The server registers nothing on a fuzzy, unconfirmed hit,
             // so a low answer leaves the catalog id still owed.
             sourceSent = sourceId != null && confidence == WorkAlias.HIGH,

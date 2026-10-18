@@ -1,5 +1,5 @@
 <resources>
-    <string name="reader_sync_furthest_known">Самая дальняя известная позиция</string>
+    <string name="reader_sync_furthest_known">Дальше всего</string>
     <string name="reader_sync_take_furthest">Перейти к самой дальней позиции</string>
     <string name="sort_recent">Недавние</string>
     <string name="sort_title">Название</string>
@@ -378,7 +378,7 @@
     <string name="reader_sync_book_not_synced">Сервер не знает эту книгу, поэтому синхронизировать нечего.</string>
     <string name="reader_sync_book_moved">Пока это было открыто, что-то изменилось, поэтому ничего не изменено. Попробуйте синхронизировать книгу снова.</string>
     <string name="reader_sync_book_kept">Оставлена позиция этого устройства. Она уйдёт на сервер при следующей синхронизации.</string>
-    <string name="reader_sync_book_title">Две позиции чтения</string>
+    <string name="reader_sync_book_title">Откуда читать</string>
     <string name="reader_bookorbit_choice_help">На этом устройстве и на сервере сохранены разные позиции. На странице за окном показана позиция сервера. Выберите, откуда продолжить чтение, и другая сторона будет обновлена. Отмена вернёт вас к позиции этого устройства и ничего не изменит.</string>
     <string name="reader_bookorbit_take">Оставить позицию сервера</string>
     <string name="reader_bookorbit_retry">Отправить позицию этого устройства ещё раз</string>
@@ -393,10 +393,14 @@
     <string name="reader_sync_there">На сервере</string>
     <string name="reader_sync_page">Страница %1$d из %2$d</string>
     <string name="reader_sync_near_page">Около страницы %1$d из %2$d</string>
-    <string name="reader_sync_percent">%1$d%% прочитано</string>
+    <string name="reader_sync_percent">%1$d%%</string>
     <string name="reader_sync_take_theirs">Перейти к позиции сервера</string>
     <string name="reader_sync_keep_mine">Оставить позицию этого устройства</string>
     <string name="reader_sync_cancel">Отмена</string>
+    <string name="reader_sync_forget">Забыть</string>
+    <string name="reader_sync_forget_confirm">Забыть эту позицию?</string>
+    <string name="reader_sync_forget_keep">Оставить</string>
+    <string name="reader_sync_furthest_forgotten">Самая дальняя позиция забыта.</string>
     <string name="reader_position_not_saved">Эту позицию чтения не удалось сохранить. Оставьте книгу открытой и перелистните страницу, чтобы попробовать снова.</string>
     <string name="server_sync_timeout">Сервер слишком долго не отвечал; позиции синхронизируются позже.</string>
     <string name="server_sync_unauthorised">Сервер больше не принимает этот вход. Подключите учётную запись заново, чтобы снова синхронизировать позиции.</string>

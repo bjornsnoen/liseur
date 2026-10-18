@@ -135,6 +135,13 @@ class RoutedPositionSync(
         else router.positionSync()?.takeFurthestPosition(bookUrl, atRevision, destination, peerId)
             ?: ResolveOutcome.Superseded
 
+    override suspend fun forgetFurthestPosition(
+        bookUrl: String, destination: FurthestDestination, uptoSeq: Long, peerId: String?,
+    ): ResolveOutcome =
+        if (isBrowseBook(bookUrl) && !router.maySyncBrowseBook()) ResolveOutcome.Superseded
+        else router.positionSync()?.forgetFurthestPosition(bookUrl, destination, uptoSeq, peerId)
+            ?: ResolveOutcome.Superseded
+
     override suspend fun refreshUnresolved() {
         router.positionSync()?.refreshUnresolved()
     }

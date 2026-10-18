@@ -1266,7 +1266,7 @@ reader behavior.
   Preserve each snapshot candidate by operation identity, including optional
   `origin_alias` provenance in its original JSON. Compare valid fractions strictly,
   without the merge tolerance; jumps count, and rereading or marking unread
-  never resets them.
+  never resets them. Forget, below, is the one explicit reset.
   Migration 66 retains each valid pre-upgrade position with its original locator,
   reading timestamp, and known edition. Its author is unknown, so a null
   `peak_revision` keeps it available for explicit recovery without uploading it
@@ -1280,8 +1280,22 @@ reader behavior.
   destinations. A present array replaces that snapshot's cached observations
   so split-off editions do not remain attached to the old work. A missing
   array is an older server: retain observed positions without claiming a
-  global lifetime maximum. The manual action says "Furthest known position"
-  and also works from durable observations while offline.
+  global lifetime maximum. The manual action says "Furthest read" and also
+  works from durable observations while offline.
+- Forget on the furthest card is online only and server first
+  (`POST /v1/works/{id}/furthest/forget` with the preview's
+  `furthestUptoSeq`; [ADR 0059](docs/adr/0059-forget-the-furthest-position.md)).
+  The server keeps a per-work floor and ranks only ops above it; the ops log
+  is untouched. Positions answers carry `furthest_floor`, heads answers and
+  every changes page `furthest_floors`; the client stores the highest seen on `work_alias`,
+  drops `furthest_position` rows at or below it, and `observe()` ignores ops
+  at or below it. A rising floor starts this device's peak over from its
+  current place only when the server already holds that peak (acknowledged,
+  or a null `peak_revision`); an unsent peak is newer reading and is kept.
+  The device that pressed Forget always starts its own peak over. A peak
+  retry accepted with a `seq` at or below the floor is also started over;
+  a peak first sent as the current position is retried with that op's
+  bytes (`peak_delivery.sent_op`), never under a new peak id.
 - Before sending a coalesced lower current position, deliver its stored local
   peak with a deterministic, separately namespaced operation. `peak_delivery`
   tracks only this peak's acknowledgement, not a general operation queue.
