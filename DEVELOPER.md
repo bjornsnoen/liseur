@@ -414,7 +414,7 @@ Note that granting any permission in the `NEARBY_DEVICES` group grants
 this one with it, so a phone that has been asked about nearby devices
 for another reason will not show the prompt.
 
-### Why the reading stats say "Counting this device only"
+### Why the reading stats say "this device only"
 
 The dashboard combines every device that has signed in to liseur-sync,
 but only when the merge can be *proved* exact. When it cannot, the
@@ -471,7 +471,7 @@ adb shell "run-as com.chmouel.liseur sqlite3 databases/liseur.db \
    DELETE FROM session_transmission;'"
 ```
 
-The screen should still read "Counting all your devices", and the
+The line over the total should still end in "all your devices", and the
 sitting count should equal this device's own, not that plus the
 server's. Never do this on a phone somebody reads on.
 

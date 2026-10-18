@@ -962,12 +962,16 @@
     <string name="annotations_backup_failed">That did not work: %1$s</string>
     <string name="annotations_backup_failed_unknown">That did not work.</string>
     <string name="reading_stats">Reading stats</string>
-    <string name="reading_stats_total">Time spent reading</string>
     <string name="reading_stats_books_read">Books read from</string>
     <string name="reading_stats_books_finished">Books finished</string>
     <string name="reading_stats_by_book">By book</string>
-    <string name="reading_stats_from_this_device">Counting this device only</string>
-    <string name="reading_stats_from_all_devices">Counting all your devices</string>
+    <string name="reading_stats_joined" translatable="false">%1$s · %2$s</string>
+    <string name="reading_stats_scope_all_devices">all your devices</string>
+    <string name="reading_stats_scope_this_device">this device only</string>
+    <string name="reading_stats_overview">Overview</string>
+    <string name="reading_stats_time_left_label">Time left</string>
+    <string name="reading_stats_time_left_value">About %1$s</string>
+    <string name="reading_stats_time_left_note">At the pace you have been reading</string>
     <string name="reading_stats_book_elsewhere">Read on another device</string>
     <string name="reading_stats_empty_title">Nothing recorded yet.</string>
     <string name="reading_stats_empty_detail">Liseur starts counting from the moment you open a book. Reading you did before this arrived is not here, because there is no honest way to work out how long it took.</string>
@@ -979,15 +983,11 @@
         <item quantity="one">%d day</item>
         <item quantity="other">%d days</item>
     </plurals>
-    <string name="reading_stats_week_total">%1$s this week</string>
     <string name="reading_stats_progress">%1$d%% through</string>
     <string name="reading_stats_period_read">%1$s during %2$s</string>
     <string name="reading_stats_no_reading_period">Nothing read during %1$s</string>
-    <string name="reading_stats_this_week">This week, on every device</string>
     <string name="reading_stats_this_week_local">This week</string>
-    <string name="reading_stats_this_month">This month, on every device</string>
     <string name="reading_stats_this_month_local">This month</string>
-    <string name="reading_stats_this_year">This year, on every device</string>
     <string name="reading_stats_this_year_local">This year</string>
     <string name="reading_stats_in_total">In total</string>
     <!-- The figure above these is every device's; the comparison under it is
@@ -1005,12 +1005,13 @@
     <string name="reading_stats_period_year">last year</string>
     <string name="reading_stats_sessions">Sittings</string>
     <string name="reading_stats_streak">Day streak</string>
-    <string name="reading_stats_time_left">About %1$s left, at the pace you have been reading</string>
-    <string name="reading_stats_range">Change the span</string>
     <string name="reading_stats_range_7d">This week</string>
     <string name="reading_stats_range_this_month">This month</string>
     <string name="reading_stats_range_this_year">This year</string>
     <string name="reading_stats_range_all">All time</string>
+    <string name="reading_stats_chip_week">Week</string>
+    <string name="reading_stats_chip_month">Month</string>
+    <string name="reading_stats_chip_year">Year</string>
     <string name="reading_stats_by_day">Day by day</string>
     <string name="reading_stats_by_week">Week by week</string>
     <string name="reading_stats_by_month">Month by month</string>

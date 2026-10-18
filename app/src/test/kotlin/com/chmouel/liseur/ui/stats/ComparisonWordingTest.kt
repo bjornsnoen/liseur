@@ -3,6 +3,7 @@ package com.chmouel.liseur.ui.stats
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.chmouel.liseur.R
+import com.chmouel.liseur.domain.StatsRange
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertFalse
 import org.junit.Test
@@ -46,22 +47,31 @@ class ComparisonWordingTest {
     }
 
     /**
-     * And the total above it still says it counted all of them.
+     * And the line over the total names the devices it actually counted.
      *
-     * The two lines sit in one card, so the contrast between them is the
-     * whole of what tells the reader which figure is which.
+     * The comparison beneath it is read against that line, so the line
+     * must follow the provenance. It used to say "on every device" over
+     * figures that had counted this one alone.
      */
     @Test
-    fun `the total above it still names every device`() {
-        val captions = listOf(
-            R.string.reading_stats_this_week,
-            R.string.reading_stats_this_month,
-            R.string.reading_stats_this_year,
-        )
+    fun `the line over the total names the devices it counted`() {
+        for (range in StatsRange.entries) {
+            val all = scopeText(range, StatsProvenance.ALL_DEVICES)
+            assertTrue(all, all.contains("all your devices"))
+            assertFalse(all, all.contains("this device"))
 
-        for (caption in captions) {
-            val text = context.getString(caption)
-            assertTrue(text, text.contains("every device"))
+            val local = scopeText(range, StatsProvenance.THIS_DEVICE)
+            assertTrue(local, local.contains("this device only"))
+            assertFalse(local, local.contains("all your devices"))
         }
+    }
+
+    private fun scopeText(range: StatsRange, provenance: StatsProvenance): String {
+        val line = scopeLine(range, provenance)
+        return context.getString(
+            R.string.reading_stats_joined,
+            context.getString(line.range),
+            context.getString(line.devices),
+        )
     }
 }

@@ -1494,7 +1494,7 @@ step "Reading stats"
 open_library
 tap_on "More" exact
 tap_on "Reading stats"
-wait_for "Time spent reading" 20 >/dev/null ||
+wait_for "Overview" 20 >/dev/null ||
     die "the reading stats screen never opened"
 on_screen "Nothing recorded yet" &&
     die "the stats screen has no reading on it; reseed the shelf with --setup"
