@@ -671,6 +671,17 @@ fun LibraryScreen(
                                     },
                                 )
                                 DropdownMenuItem(
+                                  text = { Text(stringResource(R.string.server_sync_now)) },
+                                  leadingIcon = {
+                                    Icon(Icons.Outlined.Sync, contentDescription = null)
+                                  },
+                                  onClick = {
+                                    moreOpen = false
+                                    onSyncNow()
+                                  },
+                                )
+                                // Keep this setting action as the last item in the menu.
+                                DropdownMenuItem(
                                     text = { Text(stringResource(R.string.settings)) },
                                     leadingIcon = {
                                         Icon(
@@ -681,17 +692,6 @@ fun LibraryScreen(
                                     onClick = {
                                         moreOpen = false
                                         onOpenSettings()
-                                    },
-                                )
-                                // Keep this full sync action as the last item in the menu.
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.server_sync_now)) },
-                                    leadingIcon = {
-                                        Icon(Icons.Outlined.Sync, contentDescription = null)
-                                    },
-                                    onClick = {
-                                        moreOpen = false
-                                        onSyncNow()
                                     },
                                 )
                             }
