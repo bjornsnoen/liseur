@@ -34,7 +34,7 @@ class StatsSnapshotUnionTest {
             books = WorkTotals(mapOf("book" to remote), listOf(brief)),
             days = listOf(InsightDay(today, remote.activeMinutes + brief.activeMinutes)),
         )
-        val result = uniteSnapshot(local, books, emptyMap(), snapshot)!!
+        val result = uniteSnapshot(local, books, emptyMap(), snapshot, ZoneId.of("UTC"))!!
         val displayed = result.stats.hideBrieflyReadBooks()
 
         assertEquals(120_000L, displayed.books.single().totalMs)
@@ -53,7 +53,7 @@ class StatsSnapshotUnionTest {
                 listOf(SessionSpan("book", at, 20 * 60_000, at, uploaded)),
                 books, zone, today, StatsRange.THIS_MONTH,
             )
-            uniteSnapshot(local, books, emptyMap(), snapshot)!!
+            uniteSnapshot(local, books, emptyMap(), snapshot, ZoneId.of("UTC"))!!
         }
         for (result in results) {
             assertEquals(90 * 60_000L, result.headline.totalMs)
@@ -70,7 +70,7 @@ class StatsSnapshotUnionTest {
             listOf(SessionSpan("book", at, 20 * 60_000, at, uploaded = true)),
             books, zone, today,
         )
-        val result = uniteSnapshot(local, books, emptyMap(), snapshot(overlapMinutes = 0.0))!!
+        val result = uniteSnapshot(local, books, emptyMap(), snapshot(overlapMinutes = 0.0), ZoneId.of("UTC"))!!
         assertEquals(110 * 60_000L, result.headline.totalMs)
         assertEquals(110 * 60_000L, result.stats.books.single().totalMs)
     }
@@ -81,7 +81,7 @@ class StatsSnapshotUnionTest {
         val snapshot = snapshot(0.0).copy(
             days = listOf(InsightDay(today.minusDays(3), 90.0)),
         )
-        val result = uniteSnapshot(local, books, emptyMap(), snapshot)!!
+        val result = uniteSnapshot(local, books, emptyMap(), snapshot, ZoneId.of("UTC"))!!
         assertEquals((1..5).map { LocalDate.of(2026, 9, it) }, result.stats.recent.map { it.date })
         assertEquals(0L, result.stats.recent.last().totalMs)
     }
@@ -100,12 +100,12 @@ class StatsSnapshotUnionTest {
             ),
             days = listOf(InsightDay(today, server)),
         )
-        val result = uniteSnapshot(local, books, emptyMap(), snapshot)
+        val result = uniteSnapshot(local, books, emptyMap(), snapshot, ZoneId.of("UTC"))
         assertNotNull(result)
         assertEquals(local.totalMs, result!!.headline.totalMs)
         assertEquals(local.totalMs, result.stats.books.single().totalMs)
         assertEquals(local.totalMs, result.stats.recent.last().totalMs)
-        assertNull(uniteSnapshot(local, books, emptyMap(), snapshot.copy(overlapSessions = 5)))
+        assertNull(uniteSnapshot(local, books, emptyMap(), snapshot.copy(overlapSessions = 5), ZoneId.of("UTC")))
     }
 
     @Test
@@ -116,7 +116,7 @@ class StatsSnapshotUnionTest {
         )
         val withPace = snapshot(overlapMinutes = 0.0)
             .copy(summary = InsightsSummary(90.0, 4, 10, progressionPerHour = 0.5))
-        val result = uniteSnapshot(local, books, emptyMap(), withPace)!!
+        val result = uniteSnapshot(local, books, emptyMap(), withPace, ZoneId.of("UTC"))!!
         assertEquals(0.5, result.headline.progressionPerHour)
         assertEquals(true, result.headline.serverOnlyPace)
     }
@@ -129,7 +129,7 @@ class StatsSnapshotUnionTest {
         )
         // snapshot() leaves progressionPerHour null, which is a server
         // that counted no progression rather than one that paced at zero.
-        val result = uniteSnapshot(local, books, emptyMap(), snapshot(overlapMinutes = 0.0))!!
+        val result = uniteSnapshot(local, books, emptyMap(), snapshot(overlapMinutes = 0.0), ZoneId.of("UTC"))!!
         assertNull(result.headline.progressionPerHour)
         assertEquals(false, result.headline.serverOnlyPace)
     }
@@ -143,7 +143,7 @@ class StatsSnapshotUnionTest {
             ),
             books, zone, today,
         )
-        val result = uniteSnapshot(local, books, emptyMap(), snapshot(overlapMinutes = 20.0))!!
+        val result = uniteSnapshot(local, books, emptyMap(), snapshot(overlapMinutes = 20.0), ZoneId.of("UTC"))!!
         assertEquals(100 * 60_000L, result.headline.totalMs)
         assertEquals(5, result.headline.sessions)
     }

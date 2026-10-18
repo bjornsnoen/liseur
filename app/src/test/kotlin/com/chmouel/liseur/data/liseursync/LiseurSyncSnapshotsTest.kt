@@ -24,6 +24,7 @@ import com.chmouel.liseur.ui.stats.ReadingStatsViewModel
 import com.chmouel.liseur.ui.stats.StatsProvenance
 import java.net.InetAddress
 import java.time.DayOfWeek
+import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.util.concurrent.CopyOnWriteArrayList
@@ -751,6 +752,62 @@ class LiseurSyncSnapshotsTest {
         } finally {
             models.clear()
             Dispatchers.resetMain()
+        }
+    }
+
+    /**
+     * Read here today, not yet uploaded, and begun weeks ago on the
+     * server's record: the server has no row for it this month, and the
+     * start must still be the server's day. A day that could not be one
+     * of reading leaves the local start alone rather than failing the
+     * screen.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `a book begun before the window keeps the server's start`() = runTest {
+        Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
+        sitting()
+        val begun = today.minusDays(40)
+        val cases = mapOf(
+            begun.toString() to begun,
+            "-999999999-01-01" to today,
+            today.plusDays(1).toString() to today,
+            "13/10/2026" to today,
+        )
+        try {
+            for ((sent, shown) in cases) assertEquals(sent, shown, startShownWhenServerSays(sent))
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    private suspend fun startShownWhenServerSays(day: String): LocalDate {
+        val models = ViewModelStore()
+        try {
+            changeResponse = {
+                it.put("summary", JSONObject("""{"total_active_minutes":0,"sessions":0,"streak_days":0}"""))
+                it.put("works", JSONArray())
+                it.put("days", JSONArray())
+                it.put("first_read_days", JSONObject().put("work", day))
+            }
+
+            val model = ReadingStatsViewModel(
+                db.readingSessionDao(), db.bookDao(), db.readingProgressDao(),
+                initialRange = StatsRange.THIS_MONTH, zone = { zone },
+                now = { today.atTime(13, 0).atZone(it) }, initialWeekStart = DayOfWeek.MONDAY,
+                snapshotSource = client(),
+                aliases = db.workIdentityDao().observeAliases(),
+                liveAccounts = db.remoteServerDao().observe().map { it?.let(LiveIdentity::from) },
+            )
+            models.put("owned", model)
+            model.refreshServerInsights()
+            val ready = model.state.first {
+                it is ReadingStatsUiState.Ready && it.provenance == StatsProvenance.ALL_DEVICES
+            } as ReadingStatsUiState.Ready
+            val book = ready.stats.books.single()
+            return Instant.ofEpochMilli(book.firstReadAt!!).atZone(zone).toLocalDate()
+        } finally {
+            models.clear()
         }
     }
 

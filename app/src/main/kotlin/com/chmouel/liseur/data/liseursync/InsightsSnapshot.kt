@@ -42,6 +42,13 @@ data class SnapshotTotals(
     val overlapDays: Map<LocalDate, Double>,
     val combinedStreak: Int,
     val comparison: SnapshotComparison? = null,
+    /**
+     * By local book URL, the account-local day its work was first read on
+     * any device, over the whole record whatever the window. The only way
+     * a device whose own history starts later, because it was reinstalled
+     * or is new, can know when a book was really begun.
+     */
+    val firstReadDays: Map<String, LocalDate> = emptyMap(),
 )
 
 data class SnapshotComparison(

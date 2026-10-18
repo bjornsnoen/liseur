@@ -20,6 +20,7 @@ import com.chmouel.liseur.domain.ReadingStats
 import com.chmouel.liseur.domain.StatsBook
 import com.chmouel.liseur.domain.StatsRange
 import java.time.DayOfWeek
+import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
@@ -796,6 +797,61 @@ class ReadingStatsViewModelTest {
         // older than the window is not forgotten by looking at a week.
         assertEquals(5L, merged.books.single().firstReadAt)
         assertEquals(50 * 60_000L, merged.totalMs)
+    }
+
+    /**
+     * A reinstalled phone's history starts at the reinstall, so a book
+     * begun before it would claim to have been started that day. The
+     * server's first day for the work wins when it is earlier, and the
+     * local start when that is: a sitting not uploaded yet is still the
+     * first one. It holds as well for a book the server has no figures
+     * on in the window.
+     */
+    @Test
+    fun `a book is started on the earlier of this device and the server`() {
+        val zone = ZoneId.of("Europe/Paris")
+        val localStart = ZonedDateTime.of(2026, 10, 16, 12, 46, 0, 0, zone).toInstant().toEpochMilli()
+        fun startedOn(serverDay: LocalDate, serverHasWindow: Boolean = true): LocalDate {
+            val local = ReadingStats(
+                totalMs = 10 * 60_000L,
+                booksRead = 1,
+                booksFinished = 0,
+                books = listOf(
+                    BookReadingStats(
+                        bookUrl = "book", title = "A book", author = null,
+                        totalMs = 10 * 60_000L, lastReadAt = localStart + 1, firstReadAt = localStart,
+                        progression = 0.5, finished = false, sessions = 1,
+                    ),
+                ),
+                recent = emptyList(),
+            )
+            val merged = ReadingStatsViewModel.mergeDashboard(
+                local = local,
+                knownBooks = mapOf("book" to StatsBook("book", "A book", null, 0.5, finished = false)),
+                serverRecent = null,
+                serverBooks = WorkTotals(
+                    if (serverHasWindow) {
+                        mapOf(
+                            "book" to WorkInsights(
+                                sessions = 5, activeMinutes = 60.0, etaSeconds = null,
+                                lastReadAt = localStart + 1, workId = "w-1",
+                            ),
+                        )
+                    } else {
+                        emptyMap()
+                    },
+                    emptyList(),
+                ),
+                firstReadAtByUrl = mapOf("book" to localStart),
+                serverFirstReadDays = mapOf("book" to serverDay),
+                zone = zone,
+            )
+            return Instant.ofEpochMilli(merged.books.single().firstReadAt!!).atZone(zone).toLocalDate()
+        }
+
+        assertEquals(LocalDate.of(2026, 10, 13), startedOn(LocalDate.of(2026, 10, 13)))
+        assertEquals(LocalDate.of(2026, 10, 16), startedOn(LocalDate.of(2026, 10, 17)))
+        assertEquals(LocalDate.of(2026, 10, 13), startedOn(LocalDate.of(2026, 10, 13), serverHasWindow = false))
     }
 
     @Test

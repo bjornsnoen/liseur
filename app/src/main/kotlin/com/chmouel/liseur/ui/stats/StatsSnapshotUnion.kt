@@ -7,6 +7,7 @@ import com.chmouel.liseur.domain.ReadingStats
 import com.chmouel.liseur.domain.StatsBook
 import com.chmouel.liseur.domain.unionMinutes
 import com.chmouel.liseur.domain.unionSessions
+import java.time.ZoneId
 
 internal data class UnitedStats(val stats: ReadingStats, val headline: StatsHeadline)
 
@@ -15,6 +16,7 @@ internal fun uniteSnapshot(
     knownBooks: Map<String, StatsBook>,
     firstReadAtByUrl: Map<String, Long>,
     snapshot: SnapshotTotals,
+    zone: ZoneId,
 ): UnitedStats? {
     val residual = snapshotResidual(snapshot) ?: return null
     val total = unionMinutes(
@@ -34,6 +36,7 @@ internal fun uniteSnapshot(
     )
     val merged = ReadingStatsViewModel.mergeDashboard(
         captured, knownBooks, residual.days, WorkTotals(residual.known, residual.elsewhere), firstReadAtByUrl,
+        snapshot.firstReadDays, zone,
     ).copy(totalMs = total, sessions = sessions, streakDays = snapshot.combinedStreak)
     val serverPace = snapshot.summary.progressionPerHour
     return UnitedStats(

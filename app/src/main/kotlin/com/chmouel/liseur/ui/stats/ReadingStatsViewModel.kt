@@ -44,6 +44,7 @@ import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
+import java.time.ZoneOffset
 import java.time.ZonedDateTime
 import java.util.Locale
 import kotlin.math.roundToLong
@@ -541,7 +542,7 @@ class ReadingStatsViewModel(
             val inAccountZone = readingStats(
                 local.sessionSpans, local.books, it.zone, it.today, window.range, window.weekStart,
             )
-            uniteSnapshot(inAccountZone, local.books, local.firstReadAtByUrl, it.totals)
+            uniteSnapshot(inAccountZone, local.books, local.firstReadAtByUrl, it.totals, it.zone)
         }
         val localComparison = local.spans?.let {
             compareReading(it.period, local.currentMs, local.previousMs)
@@ -657,6 +658,8 @@ class ReadingStatsViewModel(
             serverRecent: List<InsightDay>?,
             serverBooks: WorkTotals?,
             firstReadAtByUrl: Map<String, Long> = emptyMap(),
+            serverFirstReadDays: Map<String, LocalDate> = emptyMap(),
+            zone: ZoneId = ZoneOffset.UTC,
         ): ReadingStats {
             val mergedBooks = local.books
                 .mapNotNull { row -> row.bookUrl?.let { it to row } }
@@ -722,11 +725,11 @@ class ReadingStatsViewModel(
                     totalMs = maxOf(localMs, serverMs + pendingMs),
                     pendingMs = pendingMs,
                     lastReadAt = lastReadAt,
-                    // The server has no started-at; the earliest local
-                    // start across the work's URLs is the only source.
-                    // Read from the all-time map first: a URL whose
-                    // reading all predates the window has no row to
-                    // carry its date.
+                    // The earliest local start across the work's URLs,
+                    // read from the all-time map first: a URL whose
+                    // reading all predates the window has no row to carry
+                    // its date. The server's own first day is laid over
+                    // every row below.
                     firstReadAt = urls.mapNotNull { firstReadAtByUrl[it] }.minOrNull()
                         ?: rows.mapNotNull { it.firstReadAt }.minOrNull(),
                     progression = metadata.progression,
@@ -773,6 +776,20 @@ class ReadingStatsViewModel(
                         sessions = insight.sessions,
                     )
                 }
+            // A reinstalled phone's history starts at the reinstall, so the
+            // day the server says a book was first read anywhere wins when
+            // it is earlier. It applies to a book the server has nothing
+            // on in this window too: read here this week, begun months
+            // ago. The server keeps only a day, by the day a sitting
+            // ended, so it is placed at noon in the account's zone to stay
+            // the same date when shown nearby; a sitting across midnight
+            // can make it a day later than this device would have said.
+            mergedBooks.replaceAll { url, row ->
+                val serverStart = serverFirstReadDays[url]
+                    ?.atTime(LocalTime.NOON)?.atZone(zone)?.toInstant()?.toEpochMilli()
+                    ?: return@replaceAll row
+                row.copy(firstReadAt = listOfNotNull(row.firstReadAt, serverStart).min())
+            }
             val books = (mergedBooks.values + elsewhere).sortedWith(
                 compareByDescending<BookReadingStats> { it.totalMs }.thenBy { it.title },
             )

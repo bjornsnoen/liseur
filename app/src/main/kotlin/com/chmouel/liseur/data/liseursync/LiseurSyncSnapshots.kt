@@ -459,8 +459,27 @@ class LiseurSyncSnapshots(
                 },
                 json.count("combined_streak_days"),
                 comparison,
+                parseFirstReadDays(json, today).let { days ->
+                    workByUrl.mapNotNull { (url, work) -> days[work]?.let { url to it } }.toMap()
+                },
             ),
         )
+    }
+
+    /**
+     * Decoration on top of the local start, so a malformed entry costs
+     * only itself. A date must be a plain four-digit-year day no later
+     * than today: anything else could not have been a reading, and an
+     * outlandish year would overflow on its way to a timestamp.
+     */
+    private fun parseFirstReadDays(json: JSONObject, today: LocalDate): Map<String, LocalDate> {
+        val days = json.optJSONObject("first_read_days") ?: return emptyMap()
+        return days.keys().asSequence().mapNotNull { work ->
+            days.optString(work).takeIf { PLAIN_DAY.matches(it) }
+                ?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+                ?.takeIf { it <= today }
+                ?.let { work to it }
+        }.toMap()
     }
 
     private fun parseComparison(
@@ -556,5 +575,6 @@ class LiseurSyncSnapshots(
         const val MAX_CALENDAR_DAYS = 366_000L
         const val MAX_CALENDAR_PAGES = 128
         val COMPARISON_TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss.SSS")
+        val PLAIN_DAY = Regex("""\d{4}-\d{2}-\d{2}""")
     }
 }
