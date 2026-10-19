@@ -1,152 +1,142 @@
 # Liseur: agent instructions
 
-Liseur is an open-source Android EPUB reader with local shelves and optional
-calibre-web, Komga, and liseur-sync connections. It uses Kotlin, Jetpack
-Compose, and the Readium Kotlin Toolkit. The app must remain FOSS-compatible
-with F-Droid.
+Liseur is an open-source Android EPUB reader (Kotlin, Jetpack Compose,
+Readium Kotlin Toolkit) with local shelves and optional calibre-web, Komga,
+BookOrbit and liseur-sync connections. It ships on F-Droid, so every change
+must stay FOSS-compatible.
 
-`DEVELOPER.md` is the detailed source of truth for architecture, provider
-protocols, synchronization invariants, reader behavior, testing procedures,
-translations, releases, F-Droid, and implementation rationale. Keep this file
-limited to rules an agent needs before changing code, and link to the detailed
-section when a rule is not self-contained.
+This file holds only what you need before changing code.
+[DEVELOPER.md](DEVELOPER.md) has the detailed rules (architecture,
+protocols, sync invariants, reader behavior, testing, releases, F-Droid);
+`docs/adr/` has the reasoning behind decisions. Read the relevant
+DEVELOPER.md section before touching that area.
 
 ## Build and validation
 
-Use the Gradle wrapper, never a system Gradle:
+Use the Gradle wrapper (JDK 17), never a system Gradle:
 
 ```bash
 ./gradlew testFossDebugUnitTest testPlayDebugUnitTest
 ./gradlew lintFossDebug lintPlayDebug
 ./gradlew assembleFossDebug assemblePlayDebug
+make check   # tests, lint and builds, when a change spans them
 ```
 
-Use `make check` when the change crosses tests, lint, and the debug build.
-There are two flavors: `foss` (F-Droid, GitHub) and `play` (Google Play,
-adds the Gemini read-aloud voices, Gemini translation, ML Kit
-translation, and the reading companion on Gemini). Read
-aloud, translation and the companion on a listed server are in both; code
-that calls Gemini or ML Kit belongs only in `app/src/play/`; see
-[DEVELOPER.md](DEVELOPER.md#building).
-See [DEVELOPER.md](DEVELOPER.md#testing) for emulator and end-to-end checks.
+- Two flavors: `foss` (F-Droid, GitHub) and `play` (Google Play). Read
+  aloud, translation and the companion on-device or on a user-listed
+  server are in both. Code that calls Gemini or ML Kit goes only in
+  `app/src/play/`, because F-Droid builds `foss` and must find none of it
+  ([details](DEVELOPER.md#building)).
+- Dependencies live in `gradle/libs.versions.toml`. AGP 9 supplies Kotlin;
+  adding `org.jetbrains.kotlin.android` breaks the build.
+- Pull request CI runs only policy checks; the full build runs on `main`
+  and in the pre-push hook. When a PR needs it in CI (something local
+  checks could not cover, or an R8/release-build risk), add the label
+  with `gh pr edit <number> --add-label full-ci`; every later push builds
+  in full until `gh pr edit <number> --remove-label full-ci`. Leave it off
+  by default.
+- Install the pre-push hook once with
+  `pre-commit install --hook-type pre-push`. It runs tests, lint and the
+  release build; skip it with `git push --no-verify` only deliberately.
+- Emulator and end-to-end checks: [DEVELOPER.md](DEVELOPER.md#testing).
 
-Pull request CI runs only quick policy checks; the full Gradle build (tests,
-lint, debug and release APKs) runs on `main` when Android or Gradle files
-change, and in the pre-push hook. When a
-pull request needs it in CI, for example a change the local checks could not
-cover or a release-build (R8) risk, add the `full-ci` label:
+## Emulators and real phones
 
-```bash
-gh pr edit <number> --add-label full-ci
-```
-
-Every later push to that pull request builds in full until the label is
-removed (`gh pr edit <number> --remove-label full-ci`). Do not add it by
-default.
-
-The project uses JDK 17, AGP 9.x, compile/target SDK 37, and min SDK 26.
-Dependencies are managed in `gradle/libs.versions.toml`. AGP supplies Kotlin
-support; do not add `org.jetbrains.kotlin.android`.
-
-## Emulator and phone safety
-
-Use `make emulator` to start the emulator in the background. Use `make run-bg`
-to build, install, and launch the app on it without opening scrcpy.
-
-Emulators are disposable: install, wipe, seed, rotate, drive with `adb`, and
-write test data with `run-as` as needed. Use `SERIAL=` or `adb -s` whenever
-more than one device is attached. Treat any serial that is not
-`emulator-*` as a real phone.
-
-Never install over, uninstall, clear, or modify the database of a real phone
-without asking first. `make dev-install` is safe from the production app's
-data because the dev package is `com.chmouel.liseur.dev`, but it is still an
-installation on a real device and must be announced.
-
-To check AI translation or OpenAI-compatible read aloud on the emulator,
-run `make ai-stub` and point the app at `http://10.0.2.2:8765/v1`; read
-what the app sent from `tmp/ai-stub/requests.jsonl` or
-`/_stub/requests`. Do not write a throwaway stub. When it lacks
-something a check needs, extend `hack/ai-stub` and `hack/test-ai-stub`
-in the same change. See
-[DEVELOPER.md](DEVELOPER.md#ai-services-on-the-emulator).
+- `make emulator` starts the emulator in the background; `make run-bg`
+  builds, installs and launches without scrcpy.
+- Emulators are disposable: install, wipe, seed, rotate, drive with `adb`
+  and write test data with `run-as` freely. Pass `SERIAL=` or `adb -s`
+  when several devices are attached.
+- IMPORTANT: any serial that is not `emulator-*` is a real phone holding
+  someone's library. Ask before installing over, uninstalling, clearing or
+  editing its database. `make dev-install` uses the separate
+  `com.chmouel.liseur.dev` package, so it is safe for the real app's data,
+  but announce it.
+- To check AI translation or OpenAI-compatible read aloud, run
+  `make ai-stub`, point the app at `http://10.0.2.2:8765/v1`, and read
+  what it sent from `tmp/ai-stub/requests.jsonl` or `/_stub/requests`.
+  When the stub lacks something, extend `hack/ai-stub` and
+  `hack/test-ai-stub` in the same change instead of writing a throwaway
+  one ([details](DEVELOPER.md#ai-services-on-the-emulator)).
 
 ## Repository workflow
 
-- Preserve unrelated worktree changes. Inspect before editing and touch only
-  files required by the task.
-- Keep non-trivial logic pure and JVM-testable; use the manual composition
-  root, `ViewModel` + `StateFlow`, Room, DataStore, and the existing package
-  boundaries.
-- Blocking network work belongs on `Dispatchers.IO` inside the blocking
-  client.
-- Do not commit, amend, rebase, reset, force-push, or create releases/tags
-  without explicit user approval.
-- Do not add `Co-authored-by` or other co-author/AI trailers.
-- For UI changes, follow the repository's screenshot and PR guidance in
-  [DEVELOPER.md](DEVELOPER.md#store-assets) and
-  [DEVELOPER.md](DEVELOPER.md#releasing).
+- Preserve unrelated worktree changes; touch only files the task needs.
+- Ask before committing, amending, rebasing, resetting, force-pushing, or
+  creating releases or tags. Add no `Co-authored-by` or AI trailers.
+- Keep non-trivial logic pure and JVM-testable. Use the manual
+  composition root, `ViewModel` + `StateFlow`, Room, DataStore and the
+  existing package boundaries. Blocking network calls run on
+  `Dispatchers.IO` inside the blocking client.
+- UI changes follow the screenshot and PR guidance in
+  [store assets](DEVELOPER.md#store-assets) and
+  [releasing](DEVELOPER.md#releasing).
+- Keep DEVELOPER.md tight: rules, commands and invariants. When an ADR
+  already explains a decision, link it instead of restating its
+  rationale, history or examples.
 
-## Non-negotiable constraints
+## Finishing work
 
-- Every dependency must be FOSS and come from Maven Central or Google's Maven
-  repository. Never add `readium-lcp`, proprietary blobs, trackers,
-  analytics, Google Play services, or unapproved network endpoints.
-  The single exception is ML Kit (`com.google.mlkit:translate`) in the
-  `play` flavor: it may bring its
-  own dependencies (Play services client libraries, Firebase components,
-  datatransport), model downloads, diagnostics, and Google attribution
-  assets, all under `app/src/play/` and `playImplementation`. It must not
-  reach the `foss` build, and anything that widens what it sends requires
-  updating `docs/PRIVACY.md`; see
-  [DEVELOPER.md](DEVELOPER.md#f-droid-readiness).
-- Preserve release reproducibility. Do not remove the `dependenciesInfo` or
-  `packaging.jniLibs.keepDebugSymbols` settings in
-  `app/build.gradle.kts`; see [DEVELOPER.md](DEVELOPER.md#f-droid-readiness).
-- User-facing UI text belongs in the English resource file and in the French,
-  Spanish, Russian, Italian, German, and Simplified Chinese
-  (`values-b+zh+Hans`) resources in the same change. Use
-  `stringResource` or `pluralStringResource`, mark brand names
-  `translatable="false"`, and preserve Russian plural categories. See
-  [DEVELOPER.md](DEVELOPER.md#translations).
+- Before reporting a code change done, run a real check that exercises
+  it: the focused unit test, lint or build for the touched flavor, or the
+  emulator for reader and UI behavior. A check that failed to start does
+  not count. If none can run here, say which one you skipped and why.
+  Docs-only changes need no Gradle run.
+- Carry multi-part work through to the end. Stop to ask only when you
+  are blocked or before a risky step (a real phone, git history, a
+  release).
+- When the request is done and checked, stop and report. Add tests only
+  where they protect the changed behavior; suggest other tests, docs or
+  refactors at the end instead of making them. Run extra review rounds or
+  reviewer sub-agents only when asked.
+- When asked for a plan, ideas or options, give them and wait before
+  changing files.
 
-## High-risk implementation rules
+## Constraints
 
-The detailed rules and rationale live in
-[DEVELOPER.md#implementation-invariants](DEVELOPER.md#implementation-invariants).
-The following are the rules most likely to invalidate a change:
+- Dependencies must be FOSS and come from Maven Central or Google's Maven.
+  No `readium-lcp`, proprietary blobs, trackers, analytics, Google Play
+  services or unapproved network endpoints; F-Droid rejects them. The one
+  exception is ML Kit (`com.google.mlkit:translate`) via
+  `playImplementation` under `app/src/play/`, with whatever it brings
+  (Play services client libraries, Firebase, datatransport, model
+  downloads, diagnostics, attribution assets). It must never reach
+  `foss`, and anything that widens what it sends must update
+  `docs/PRIVACY.md` ([details](DEVELOPER.md#f-droid-readiness)).
+- Keep `dependenciesInfo` off and `packaging.jniLibs.keepDebugSymbols` in
+  `app/build.gradle.kts`: F-Droid only publishes builds it can reproduce
+  byte for byte ([details](DEVELOPER.md#f-droid-readiness)).
+- User-facing text goes in the English strings and, in the same change,
+  French, Spanish, Russian, Italian, German and Simplified Chinese
+  (`values-b+zh+Hans`). Use `stringResource`/`pluralStringResource`, mark
+  brand names `translatable="false"`, and keep Russian plural categories
+  ([details](DEVELOPER.md#translations)).
 
-- Keep provider-specific behavior behind `data/remote/` contracts and
-  `RemoteRouter`; do not spread `when (ServerKind)` through callers.
-- Reading positions are Readium locators locally. Centralize merge rules in
-  `domain/ReadingStateMerge.kt`. Keep `updated_at` (this device wrote it)
-  separate from `read_at` (when reading happened).
-- liseur-sync is an append-only log. Cursor advancement and applying the page
-  it covers are one transaction; ids and payloads are derived from stored
-  state so retries are byte-identical. Never introduce random ids or a
-  `pending_ops` queue.
+## High-risk rules
+
+These are the invariants most likely to break a change; the full list is
+in [implementation invariants](DEVELOPER.md#implementation-invariants).
+
+- Provider-specific behavior stays behind the `data/remote/` contracts
+  and `RemoteRouter`; callers do not branch on `ServerKind`.
+- Local reading positions are Readium locators. Merge rules live only in
+  `domain/ReadingStateMerge.kt`. `updated_at` (this device wrote it) and
+  `read_at` (when the reading happened) stay separate.
+- liseur-sync is an append-only log. Advancing the cursor and applying
+  the page it covers happen in one transaction, and ids and payloads
+  derive from stored state so retries are byte-identical. No random ids,
+  no `pending_ops` queue.
 - Account rekeying and per-account cleanup belong in
-  `RemoteAccountRepository`; new peer-keyed tables must be handled by both
-  paths.
+  `RemoteAccountRepository`; a new peer-keyed table must be handled by
+  both paths.
 - Annotation requests persist their exact bytes before sending and replay
-  those bytes; reconcile before pushing, settle conflicts against the sent
-  version, and preserve annotation state when a book is removed.
-- A local upload adopts the server identity without rewriting `books.url`;
-  positions, annotations, and sessions are keyed by the local URL.
-- Reader position actions must refresh the current scrolled place rather than
-  trusting a debounced locator. Bookmark page identity comes from locator
-  comparison, not rounded page numbers.
-- Reader chrome follows the reading page theme. Keep page-turn overrides,
-  insets, and layout-generation guards centralized in the existing reader
-  helpers.
-
-## Hooks
-
-Install the pre-push hook once after cloning:
-
-```bash
-pre-commit install --hook-type pre-push
-```
-
-It runs tests, lint, and the release build. `git push --no-verify` skips it
-only when that is deliberate.
+  those bytes. Reconcile before pushing, settle conflicts against the
+  sent version, and keep annotation state when a book is removed.
+- A local upload adopts the server identity without rewriting
+  `books.url`; positions, annotations and sessions stay keyed by the
+  local URL.
+- Reader position actions refresh the current scrolled place first,
+  because the Readium locator is debounced and lags. Bookmark page
+  identity comes from comparing locators, never rounded page numbers.
+- Reader chrome follows the page theme. Page-turn overrides, insets and
+  layout-generation guards stay in the existing reader helpers.
