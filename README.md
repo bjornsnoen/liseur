@@ -20,14 +20,6 @@
 
 An open-source ebook reader for Android, and a client for [calibre-web](https://github.com/janeczku/calibre-web), [Komga](https://komga.org), [BookOrbit](https://bookorbit.app), [liseur-sync](https://github.com/chmouel/liseur-sync) and any [OPDS](https://specs.opds.io/opds-1.2) catalog: EPUBs on your phone or in sync with book server.
 
-<p align="center">
-  <a href="https://www.youtube.com/watch?v=csXAmDJxxok">
-    <img src="docs/video-thumbnail.jpg" alt="Liseur: free and open source, no ads, no account. Watch the video on YouTube" width="640">
-  </a>
-  <br>
-  <sub><a href="https://www.youtube.com/watch?v=csXAmDJxxok">Watch the 29-second tour on YouTube</a></sub>
-</p>
-
 <table>
   <tr>
     <td width="33%"><img src="docs/screenshots/01-library.png" alt="Library"></td>
@@ -143,6 +135,16 @@ Another inspiration was a painting by [Pierre-Auguste Renoir](https://en.wikiped
   <picture>
     <img width="30%" height="30%" alt="image" align="center" src="https://github.com/user-attachments/assets/3a412231-9d5d-4131-8afd-b1a1f6da2a90" />
   </picture>
+</p>
+
+## Video 
+
+<p align="center">
+  <a href="https://www.youtube.com/watch?v=csXAmDJxxok">
+    <img src="docs/video-thumbnail.jpg" alt="Liseur: free and open source, no ads, no account. Watch the video on YouTube" width="640">
+  </a>
+  <br>
+  <sub><a href="https://www.youtube.com/watch?v=csXAmDJxxok">Watch the 30-second tour on YouTube</a></sub>
 </p>
 
 ## Author
