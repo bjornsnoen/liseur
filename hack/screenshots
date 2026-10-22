@@ -144,181 +144,13 @@ trap cleanup EXIT
 
 # ---------------------------------------------------------------- the UI
 
-# Settings now lives in the shelf's overflow menu rather than on the bar,
-# so it has to be opened before it can be found.
-open_settings() {
-    on_screen "Settings" || tap_on "More" exact
-    tap_on "Settings"
-    wait_for "Theme" >/dev/null || sleep 2
-}
-
-# Whether a settings switch is on. The row carries the checked state but
-# no text of its own, so this finds the label and then the switch row
-# wrapped around it: prints "on" or "off", or nothing if there is no such
-# row on screen.
-#
-#   switch_state <label>
-switch_state() {
-    python3 - "$work/ui.xml" "$1" <<'PY'
-import re, sys, xml.etree.ElementTree as ET
-
-path, needle = sys.argv[1], sys.argv[2].lower()
-
-def box(node):
-    m = re.match(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.get("bounds", ""))
-    return tuple(int(g) for g in m.groups()) if m else None
-
-try:
-    nodes = list(ET.parse(path).getroot().iter("node"))
-except ET.ParseError:
-    sys.exit(1)
-
-label = next(
-    (n for n in nodes if (n.get("text") or "").strip().lower().startswith(needle)),
-    None,
-)
-if label is None or (lb := box(label)) is None:
-    sys.exit(1)
-
-# The smallest checkable box that contains the label is its own row and
-# not, say, a scroll container that happens to enclose several.
-rows = [
-    (b, n) for n in nodes if n.get("checkable") == "true"
-    if (b := box(n)) and b[0] <= lb[0] and b[1] <= lb[1] and b[2] >= lb[2] and b[3] >= lb[3]
-]
-if not rows:
-    sys.exit(1)
-_, row = min(rows, key=lambda r: (r[0][2] - r[0][0]) * (r[0][3] - r[0][1]))
-print("on" if row.get("checked") == "true" else "off")
-PY
-}
-
-# Put a settings switch in a known position. Tapping blind would toggle
-# whatever the last run left behind, which is how a screenshot set ends
-# up half in one palette and half in another.
-#
-#   set_switch <label> <on|off>
-set_switch() {
-    local label=$1 want=$2 now
-    wait_for "$label" 15 >/dev/null || die "no \"$label\" switch on screen"
-    now=$(switch_state "$label") || die "could not read the \"$label\" switch"
-    if [[ $now == "$want" ]]; then
-        note "$label already $want"
-        return 0
-    fi
-    tap_on "$label"
-    sleep 2
-    dump_ui
-    [[ $(switch_state "$label") == "$want" ]] ||
-        die "could not turn \"$label\" $want"
-    note "$label turned $want"
-}
-
-# The dictionary switch sits on the reading and navigation screen, not
-# on Settings itself.
-open_dictionary_settings() {
-    scroll_to "$READING_SETTINGS" exact || die "no \"$READING_SETTINGS\" row in Settings"
-    tap_on "$READING_SETTINGS" exact
-    scroll_to "$DICTIONARY_SWITCH" ||
-        die "no \"$DICTIONARY_SWITCH\" switch under \"$READING_SETTINGS\""
-}
-
-# Which service read aloud speaks with, as its own settings screen names
-# it. The screen shows only the chosen one, so whichever label is there
-# is the answer.
-voice_service() {
-    local service
-    dump_ui || return 1
-    for service in "$DEVICE_VOICES" "Speech server (OpenAI-compatible)" "Gemini"; do
-        if find_node "$service" exact >/dev/null; then
-            printf '%s\n' "$service"
-            return 0
-        fi
-    done
-    return 1
-}
-
-# Pick a voice service, from read aloud's settings screen.
-#
-#   choose_voice_service <label>
-choose_voice_service() {
-    local want=$1
-    [[ $(voice_service) == "$want" ]] && return 0
-    tap_on "Change the voice service" exact
-    wait_for "$want" 15 exact >/dev/null || die "no \"$want\" in the voice services"
-    tap_on "$want" exact
-    sleep 2
-    [[ $(voice_service) == "$want" ]] || die "could not switch read aloud to \"$want\""
-    note "read aloud now speaks with $want"
-}
-
-# Bring something below the fold into view, on any screen that scrolls
-# with a swipe. `wait_for` only ever looks at what is already on screen,
-# so a switch further down a long form is a switch it never finds.
-#
-#   scroll_to <needle> [exact|prefix|contains]
-scroll_to() {
-    local needle=$1 mode=${2:-prefix} i
-    for i in 1 2 3 4 5 6 7 8; do
-        dump_ui && find_node "$needle" "$mode" >/dev/null && return 0
-        adb shell input swipe "$(x 0.5)" "$(y 0.75)" "$(x 0.5)" "$(y 0.35)" 400
-        sleep 1
-    done
-    dump_ui && find_node "$needle" "$mode" >/dev/null
-}
-
-# Tap something on the shelf, scrolling down to it if it is below the
-# fold. Only the shelf scrolls this way; a swipe in the reader turns a
-# page instead.
-tap_on_shelf() {
-    local needle=$1 mode=${2:-prefix} i at
-    for i in 1 2 3 4 5 6; do
-        if dump_ui && at=$(find_node "$needle" "$mode"); then
-            # shellcheck disable=SC2086
-            adb shell input tap $at
-            sleep 2
-            return 0
-        fi
-        adb shell input swipe "$(x 0.5)" "$(y 0.75)" "$(x 0.5)" "$(y 0.3)" 400
-        sleep 2
-    done
-    die "never found \"$needle\" on the shelf"
-}
-
-# Back to the top of the shelf, so a capture starts where the last one did.
-shelf_to_top() {
-    local i
-    for i in 1 2 3 4 5 6; do
-        adb shell input swipe "$(x 0.5)" "$(y 0.3)" "$(x 0.5)" "$(y 0.8)" 300
-        sleep 1
-    done
-    sleep 1
-}
-
 # The selection popup is a Compose popup, in a window uiautomator does not
 # report, so nothing in it can be found by what it says. Its highlight
 # colours give it away in a screenshot instead, and the rest of the row
 # sits a fixed distance from the first of them.
 #
-# The colours listed are exactly the ones the bar offers out of the box
-# (HighlightPalette.DEFAULT_OFFERED), in the order HighlightTint declares
-# them. The offsets below are measured from the first chip, so a chip
-# more or less than this file expects moves every action after it --
-# which is what a change of palette did: Define landed on Note, opened
-# the note editor, and the run photographed the old definition card for
-# several releases running.
-readonly TINTS="FFD54F,9CCC65,64B5F6"
-# 30dp of chip and 6dp of gap: what the colours are spaced at, which is
-# how a row of chips is told from marks that happen to line up.
-readonly POPUP_CHIP_PITCH_DP=36
-readonly POPUP_NOTE_DP=111
-readonly POPUP_DEFINE_DP=153
-# After Define come Search and Share, 36dp buttons 6dp apart.
-readonly POPUP_READ_ALOUD_DP=279
-
 density=$(adb shell wm density | sed -nE 's/.*density: ([0-9]+).*/\1/p' | tail -n 1)
 [[ -n "$density" ]] || density=420
-dp() { printf '%.0f' "$(awk "BEGIN { print $1 * $density / 160 }")"; }
 
 # ------------------------------------------------------- where they land
 #
@@ -365,155 +197,6 @@ else
     readonly FASTLANE_DIR="fastlane/metadata/android/en-US/images/tenInchScreenshots"
 fi
 
-# A screencap decoded to pixels without a library: an emulator host may
-# have no Pillow on it, and asking for one would put a pip install
-# between a checkout and a screenshot. Reads the file named by the first
-# argument and leaves out, width, height, channels and stride behind for
-# whatever is appended to it.
-readonly PNG_DECODER=$(
-    cat <<'PYEOF'
-import struct, sys, zlib
-
-path = sys.argv[1]
-data = open(path, "rb").read()
-if data[:8] != b"\x89PNG\r\n\x1a\n":
-    sys.exit(1)
-
-pos, idat, width, height, colour = 8, b"", 0, 0, 0
-while pos < len(data):
-    length, typ = struct.unpack(">I4s", data[pos:pos + 8])
-    chunk = data[pos + 8:pos + 8 + length]
-    if typ == b"IHDR":
-        width, height, _, colour = struct.unpack(">IIBB", chunk[:10])
-    elif typ == b"IDAT":
-        idat += chunk
-    pos += 12 + length
-
-raw = zlib.decompress(idat)
-channels = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}[colour]
-stride = width * channels
-out, prev, p = bytearray(), bytearray(stride), 0
-for _ in range(height):
-    f = raw[p]
-    p += 1
-    line = bytearray(raw[p:p + stride])
-    p += stride
-    if f == 1:
-        for i in range(channels, stride):
-            line[i] = (line[i] + line[i - channels]) & 255
-    elif f == 2:
-        for i in range(stride):
-            line[i] = (line[i] + prev[i]) & 255
-    elif f == 3:
-        for i in range(stride):
-            a = line[i - channels] if i >= channels else 0
-            line[i] = (line[i] + ((a + prev[i]) >> 1)) & 255
-    elif f == 4:
-        for i in range(stride):
-            a = line[i - channels] if i >= channels else 0
-            b = prev[i]
-            c = prev[i - channels] if i >= channels else 0
-            pa, pb, pc = abs(b - c), abs(a - c), abs(a + b - 2 * c)
-            line[i] = (line[i] + (a if pa <= pb and pa <= pc else (b if pb <= pc else c))) & 255
-    out += line
-    prev = line
-PYEOF
-)
-
-# Where the first highlight colour is, as "x y", or nothing if the popup
-# is not up.
-#
-# All four colours have to be there, evenly spaced, side by side on one
-# row. A yellow highlight already on the page is otherwise
-# indistinguishable from the yellow chip, and mistaking one for the other
-# means tapping the page when the script believes it is tapping a button
-# -- or, worse, tapping the button next to the one it meant, because
-# every offset in this file is measured from where the first chip is.
-#
-# Averaging every pixel of a colour was what did that: a paragraph marked
-# in yellow drags the yellow "chip" a long way left of the real one, and
-# the row test still passes because the mark is on the same line as the
-# popup. So the pixels are grouped into blobs first, and the answer is
-# the one set of four blobs that sits in a row at the pitch the chips are
-# laid out at.
-#
-#   find_popup   (reads $TINTS and the chip pitch in pixels)
-find_popup() {
-    adb exec-out screencap -p > "$work/screen.png" 2>/dev/null || return 1
-    python3 -c "$PNG_DECODER
-$(
-        cat <<'PYEOF'
-targets = [tuple(int(c[i:i + 2], 16) for i in (0, 2, 4)) for c in sys.argv[2].split(",")]
-pitch = float(sys.argv[3])
-
-STEP = 3
-# Samples this far apart belong to the same blob. A chip is a disc wider
-# than this; two chips are a gap wider still.
-NEAR = 5 * STEP
-
-blobs = []
-for target in targets:
-    cells = {}
-    for y in range(0, height, STEP):
-        row = y * stride
-        for x in range(0, width, STEP):
-            i = row + x * channels
-            if all(abs(out[i + n] - target[n]) < 12 for n in range(3)):
-                cells.setdefault((x // NEAR, y // NEAR), []).append((x, y))
-
-    # Flood-fill the occupied cells into blobs.
-    seen, groups = set(), []
-    for cell in cells:
-        if cell in seen:
-            continue
-        seen.add(cell)
-        stack, group = [cell], []
-        while stack:
-            cx, cy = stack.pop()
-            group += cells[(cx, cy)]
-            for dx in (-1, 0, 1):
-                for dy in (-1, 0, 1):
-                    nxt = (cx + dx, cy + dy)
-                    if nxt in cells and nxt not in seen:
-                        seen.add(nxt)
-                        stack.append(nxt)
-        # A stray pixel of the right colour is not a chip; a chip is a disc.
-        if len(group) >= 100:
-            groups.append(
-                (
-                    sum(p[0] for p in group) // len(group),
-                    sum(p[1] for p in group) // len(group),
-                )
-            )
-    if not groups:
-        sys.exit(1)
-    blobs.append(groups)
-
-# Four discs of different colours, evenly spaced along one line: that is
-# the popup, and nothing else on a page of text looks like it.
-best = None
-for first in blobs[0]:
-    row = [first]
-    for others in blobs[1:]:
-        want = row[-1][0] + pitch
-        near = [
-            b for b in others
-            if abs(b[0] - want) <= pitch * 0.4 and abs(b[1] - first[1]) <= 12
-        ]
-        if not near:
-            break
-        row.append(min(near, key=lambda b: abs(b[0] - want)))
-    if len(row) == len(blobs):
-        best = row
-        break
-
-if best is None:
-    sys.exit(1)
-print(best[0][0], sum(b[1] for b in best) // len(best))
-PYEOF
-    )" "$work/screen.png" "$TINTS" "$(dp $POPUP_CHIP_PITCH_DP)"
-}
-
 # How much of the lower half of the page is ink, in tenths of a percent.
 # The page a book was left on can be the last one of a chapter, which is
 # a fine place to be reading and a poor thing to publish a picture of:
@@ -549,12 +232,6 @@ page_to_a_full_page() {
     die "no page with enough text on it after six turns"
 }
 
-x() { printf '%.0f' "$(awk "BEGIN { print $width * $1 }")"; }
-y() { printf '%.0f' "$(awk "BEGIN { print $height * $1 }")"; }
-# A fraction of the way down from another fraction, in pixels.
-down() { y "$(awk "BEGIN { print $1 + $2 }")"; }
-tap() { adb shell input tap "$(x "$1")" "$(y "$2")"; }
-
 # Put a sheet away and make sure it went. A sheet that has been dragged
 # up to its full height can eat the first back press on the way to
 # settling, and the next step then taps into a sheet it thinks is gone.
@@ -568,32 +245,6 @@ dismiss_sheet() {
         on_screen "$needle" || return 0
     done
     die "\"$needle\" would not go away"
-}
-
-# A long press: a swipe that barely moves, held long enough for the page
-# to treat it as a word being picked rather than a tap.
-hold() {
-    local px py
-    px=$(x "$1")
-    py=$(y "$2")
-    adb shell input swipe "$px" "$py" "$((px + 2))" "$((py + 2))" 1500
-    sleep 3
-}
-
-# Press a word until the selection popup appears, trying a few places
-# down the page: a press that lands in a margin selects nothing. An x
-# across the column can be given to land on a different word.
-select_a_word() {
-    local across=${1:-0.45}
-    local spot
-    for spot in 0.45 0.55 0.35 0.65; do
-        reader_chrome_down
-        hold "$across" "$spot"
-        if find_popup >/dev/null; then
-            return 0
-        fi
-    done
-    return 1
 }
 
 # Press and drag along a line to take in a run of words. The notebook is
@@ -784,89 +435,10 @@ dismiss_popup() {
     done
 }
 
-# Tap something in the selection popup, given where the first colour is.
-tap_in_popup() {
-    local what=$1 at chip_x chip_y
-    at=$(find_popup) || return 1
-    chip_x=${at% *}
-    chip_y=${at#* }
-    case $what in
-        highlight) adb shell input tap "$chip_x" "$chip_y" ;;
-        note) adb shell input tap "$((chip_x + $(dp $POPUP_NOTE_DP)))" "$chip_y" ;;
-        define) adb shell input tap "$((chip_x + $(dp $POPUP_DEFINE_DP)))" "$chip_y" ;;
-        read_aloud) adb shell input tap "$((chip_x + $(dp $POPUP_READ_ALOUD_DP)))" "$chip_y" ;;
-    esac
-    sleep 2
-}
-
 shot() {
     local name=$1
     adb exec-out screencap -p > "$OUT_DIR/$name.png"
     note "$OUT_DIR/$name.png"
-}
-
-# ------------------------------------------------------------- the app
-
-open_first_book() {
-    local title=$1
-    tap_on_shelf "$title"
-    # The reader takes a while to lay the publication out.
-    wait_for "Contents" 40 >/dev/null || sleep 8
-    sleep 3
-}
-
-# Forward, a page at a time. The chrome has to be down first: with it up,
-# a tap on the page edge only puts it away again, and the book stays
-# exactly where it was.
-turn_pages() {
-    local count=$1 direction=${2:-forward} edge=0.85 i
-    [[ $direction == back ]] && edge=0.15
-    reader_chrome_down
-    for ((i = 0; i < count; i++)); do
-        tap "$edge" 0.5
-        sleep 1
-    done
-    sleep 2
-}
-
-# The chrome comes and goes with a tap in the middle of the page.
-show_chrome() {
-    tap 0.5 0.5
-    sleep 2
-}
-
-reader_chrome_up() {
-    on_screen "Contents" || show_chrome
-}
-
-reader_chrome_down() {
-    if on_screen "Contents"; then
-        show_chrome
-    fi
-}
-
-# Pick a reading theme by name in the typography sheet, rather than
-# trusting whatever the device was left on: that is what stopped the
-# light set from quietly coming out dark on a rerun.
-choose_reading_theme() {
-    local theme=$1
-    # Opening the sheet is not always instant, and a dump taken while the
-    # reader is still settling can come back without it. Rather than tap
-    # where the swatch is meant to be, put the sheet away and open it
-    # again.
-    for _ in 1 2 3; do
-        reader_chrome_up
-        if tap_if_there "Aa" exact && wait_for "$theme" 15 exact >/dev/null; then
-            tap_on "$theme" exact
-            sleep 2
-            back
-            sleep 2
-            return 0
-        fi
-        back
-        sleep 3
-    done
-    die "could not pick the $theme reading theme"
 }
 
 # --------------------------------------------------------------- setup
@@ -1405,8 +977,7 @@ step "Read aloud"
 # showing that it is busy.
 spoken=0
 for across in 0.50 0.35 0.65; do
-    select_a_word "$across" || continue
-    tap_in_popup read_aloud
+    start_visible_read_aloud "$across" || continue
     reader_chrome_up
     if wait_for "Pause reading aloud" 30 exact >/dev/null; then
         spoken=1

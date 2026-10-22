@@ -39,6 +39,13 @@ are here.
   </tr>
 </table>
 
+## Translation
+
+![A page translated into French](screenshots/27-translation.png)
+
+The same page [in its original English](screenshots/27-translation-original.png).
+Captured with the Play edition's on-device ML Kit translator.
+
 ## Reading companion
 
 <table>

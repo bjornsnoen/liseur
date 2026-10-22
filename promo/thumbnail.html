@@ -1,0 +1,27 @@
+<!doctype html>
+<!-- YouTube thumbnail and README image: render.ts screenshots this page at 1280x720 after prepare.ts fills public/. -->
+<html><head><meta charset="utf-8"><style>
+@font-face{font-family:Literata;src:url('public/fonts/Literata.ttf');font-weight:100 900}
+@font-face{font-family:Inter;src:url('public/fonts/Inter.ttf');font-weight:100 900}
+*{margin:0;box-sizing:border-box}
+body{width:1280px;height:720px;overflow:hidden;background:radial-gradient(circle at 78% 45%,#2a5683 0%,#183453 55%,#0f2238 100%);font-family:Inter;color:#FAF8F4;position:relative}
+.brand{position:absolute;left:64px;top:52px;display:flex;align-items:center;gap:18px}
+.brand img{width:76px;height:76px;border-radius:50%;background:#F0DFCA}
+.brand span{font-family:Literata;font-weight:600;font-size:52px;color:#F0DFCA;letter-spacing:.5px}
+h1{position:absolute;left:60px;top:200px;font-family:Literata;font-weight:800;font-size:100px;line-height:1.08;letter-spacing:-2px;width:780px}
+mark{background:linear-gradient(transparent 12%,#F6D365 12%,#F6D365 92%,transparent 92%);color:#183453;padding:0 14px;margin-left:-6px;border-radius:10px;box-decoration-break:clone}
+.chips{position:absolute;left:64px;top:496px;display:flex;gap:14px;flex-wrap:wrap;width:690px}
+.chip{font-weight:700;font-size:32px;padding:12px 24px;border-radius:999px;background:rgba(240,223,202,.14);border:2px solid rgba(240,223,202,.45)}
+.free{position:absolute;left:66px;top:606px;font-weight:800;font-size:31px;color:#F6D365;letter-spacing:1px}
+.phone{position:absolute;width:300px;height:666px;border-radius:40px;background:#0b0b0b;padding:11px;box-shadow:0 30px 70px rgba(0,0,0,.55)}
+.phone img{width:100%;height:100%;object-fit:cover;object-position:top;border-radius:30px;display:block}
+.back{left:1010px;top:40px;transform:rotate(9deg)}
+.front{left:812px;top:58px;transform:rotate(-6deg)}
+</style></head><body>
+<div class="brand"><img src="public/emblem.webp"><span>Liseur</span></div>
+<h1>Your ebooks,<br><mark>read aloud.</mark></h1>
+<div class="chips"><div class="chip">Translates</div><div class="chip">Who's who</div><div class="chip">Syncs</div></div>
+<div class="free">FREE ANDROID APP · NO ADS · OPEN SOURCE</div>
+<div class="phone back"><img src="public/screenshots/26-codex-relationships.png"></div>
+<div class="phone front"><img src="public/screenshots/24-read-aloud.png"></div>
+</body></html>

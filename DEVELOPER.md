@@ -203,7 +203,7 @@ log of sent text. In Settings, External services and API keys, add
 `http://10.0.2.2:8765/v1`; pick it with model `stub-chat` for
 translation ("Translate a test sentence"; scripts type `stub-chat` and
 Enter, uiautomator cannot see the menu popup) or as voice service for
-read aloud. `hack/lib/demo-books.sh` (`tap_on`, `wait_for`, `on_screen`)
+read aloud. `hack/lib/device.sh` (`tap_on`, `wait_for`, `on_screen`)
 drives these screens given `serial`, `work` and a serial-scoped `adb`.
 
 ```bash
@@ -717,6 +717,32 @@ hack/feature-graphic        # fastlane featureGraphic.png, from the brand emblem
   README.
 - Sign out of calibre-web first unless the server holds only publishable
   books. The script never writes to it.
+
+The reproducible Revideo promo lives in `promo/`, outside Gradle. Capture
+needs adb and FFmpeg/ffprobe on the host. Use Node 22.12+ (`promo/.nvmrc` pins the tested version): `make promo-clips
+SERIAL=emulator-5556` seeds and records an installed debug app on a
+`google_apis` emulator with sqlite3; device voices or `PROMO_CLIP_ARGS="--speech-url
+http://10.0.2.2:8880/v1"` supply read aloud. Choose a translation service and
+target in Settings, then capture with `hack/promo-clips -s emulator-5556
+--translation-only`. `make promo-video` installs the pinned dependencies
+and browser, then renders to `build/promo/` and copies the MP4 and contact
+sheet to `~/tmp/liseur/`. `PROMO_ARGS="--stills --silent"` needs no emulator;
+`cd promo && npm start` opens the editor. The soundtrack is a CC0
+excerpt in `promo/assets/music.ogg`
+(source and cut in `promo/assets/MUSIC.md`); scene cuts in `BEATS` and the
+closing fade in `FADE` (`promo/src/theme.ts`) follow its notes, so retime
+both when changing the track or a scene's length. Keep a single
+`promo/assets/music.*`; rendering raises it toward -16 LUFS with one gain
+that keeps true peaks under -1.5 dBTP.
+Revideo bundles FFmpeg/ffprobe; dependency lifecycle scripts and telemetry
+stay disabled. `PUPPETEER_EXECUTABLE_PATH` can select an installed browser.
+Upload the reviewed MP4 to YouTube manually (public/unlisted, no age
+restriction, ads off), put the URL in `fastlane/metadata/android/en-US/video.txt`
+(also read by F-Droid), and set it in Play Console: the current lanes skip
+metadata. Check the feature graphic's play-button overlay. Rendering also
+writes `liseur-promo-thumbnail.jpg` from `promo/thumbnail.html`: set it as the YouTube
+thumbnail and copy it to `docs/video-thumbnail.jpg`, which the README links
+to the video. Keep the multi-frame contact sheet for release notes.
 
 Inspect the images before committing:
 

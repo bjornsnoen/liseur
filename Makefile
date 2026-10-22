@@ -29,7 +29,7 @@ DEV_PACKAGE := $(PACKAGE).dev
 DEV_ACTIVITY := $(DEV_PACKAGE)/$(PACKAGE).MainActivity
 DEV_APK := app/build/outputs/apk/$(FLAVOR)/dev/app-$(FLAVOR)-dev.apk
 
-.PHONY: help build build-all debug release bundle test lint check verify-release-tools verify-fdroid-tags e2e ai-stub clean emulator stop shutdown install run run-bg reset locale screenshots icon feature-graphic store-status dev dev-phone dev-install dev-run dev-reset dev-uninstall dev-logcat dev-locale
+.PHONY: help build build-all debug release bundle test lint check verify-release-tools verify-fdroid-tags e2e ai-stub clean emulator stop shutdown install run run-bg reset locale screenshots promo-video promo-clips icon feature-graphic store-status dev dev-phone dev-install dev-run dev-reset dev-uninstall dev-logcat dev-locale
 
 help:
 	@printf '%s\n' \
@@ -60,6 +60,8 @@ help:
 		'make dev-logcat        Tail its logs' \
 		'make dev-locale        Show or set dev app locale with LOCALE=xx' \
 		'make screenshots       Capture the UI screenshots' \
+		'make promo-clips       Capture emulator footage (SERIAL=emulator-...)' \
+		'make promo-video       Render the promo (PROMO_ARGS="--stills --silent" for review)' \
 		'make icon              Generate the store icon' \
 		'make feature-graphic   Generate the store feature graphic' \
 		'make store-status      Show each store, plus Play crashes (DAYS=7)' \
@@ -254,3 +256,9 @@ feature-graphic:
 
 store-status:
 	./hack/store-status $(if $(DAYS),--days $(DAYS))
+
+promo-clips:
+	hack/promo-clips -s '$(SERIAL)' $(PROMO_CLIP_ARGS)
+
+promo-video:
+	cd promo && npm ci && npm run setup && npm run check && npm run render -- $(PROMO_ARGS)

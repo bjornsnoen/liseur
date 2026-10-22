@@ -1,0 +1,28 @@
+{
+  "name": "liseur-promo",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "start": "DISABLE_TELEMETRY=true tsx prepare.ts && DISABLE_TELEMETRY=true vite --host 127.0.0.1",
+    "render": "DISABLE_TELEMETRY=true tsx render.ts",
+    "check": "tsc --noEmit",
+    "setup": "tsx setup.ts"
+  },
+  "devDependencies": {
+    "@revideo/2d": "0.11.0",
+    "@revideo/core": "0.11.0",
+    "@revideo/renderer": "0.11.0",
+    "@revideo/ui": "0.11.0",
+    "@revideo/vite-plugin": "0.11.0",
+    "@types/node": "22.19.7",
+    "tsx": "4.21.0",
+    "typescript": "5.9.3",
+    "vite": "8.3.5",
+    "@ffmpeg-installer/ffmpeg": "1.1.0",
+    "@ffprobe-installer/ffprobe": "2.1.2",
+    "puppeteer": "25.15.0"
+  }
+}

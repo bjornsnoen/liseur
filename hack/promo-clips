@@ -1,0 +1,197 @@
+#!/usr/bin/env bash
+# Capture promo footage on an emulator with an installed debug build.
+# Usage: hack/promo-clips [-s emulator-SERIAL] [--skip-setup] [--speech-url URL]
+#        hack/promo-clips -s emulator-SERIAL --translation-only
+# Translation capture uses the service and target already chosen in Settings.
+set -euo pipefail
+
+ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+readonly APP_ID=com.chmouel.liseur
+readonly MAIN_ACTIVITY="$APP_ID/.MainActivity"
+readonly DEVICE_VOICES="Device voices"
+# shellcheck source=hack/lib/device.sh
+source "$ROOT/hack/lib/device.sh"
+serial=""
+setup=1
+translation_only=0
+speech_url=""
+while (($#)); do
+    case $1 in
+        -s|--serial) serial=${2:?missing serial}; shift ;;
+        --skip-setup) setup=0 ;;
+        --speech-url) speech_url=${2:?missing speech URL}; shift ;;
+        --translation-only) translation_only=1; setup=0 ;;
+        -h|--help) sed -n '2,5s/^# //p' "$0"; exit 0 ;;
+        *) die "unknown argument: $1" ;;
+    esac
+    shift
+done
+command -v adb >/dev/null || die "adb is not installed"
+command -v ffmpeg >/dev/null || die "ffmpeg is not installed"
+command -v ffprobe >/dev/null || die "ffprobe is not installed"
+if [[ -z $serial ]]; then
+    mapfile -t devices < <(adb devices | awk '$1 ~ /^emulator-/ && $2 == "device" { print $1 }')
+    ((${#devices[@]} == 1)) || die "pass --serial for exactly one emulator"
+    serial=${devices[0]}
+fi
+[[ $serial == emulator-* ]] || die "refusing non-emulator serial: $serial"
+adb() { command adb -s "$serial" "$@"; }
+[[ $(adb get-state) == device ]] || die "$serial is not ready"
+adb shell pm path "$APP_ID" >/dev/null || die "install the debug app first"
+if ((setup)); then
+    adb shell "command -v sqlite3" >/dev/null || die "demo seeding needs an emulator image with sqlite3 (google_apis, not google_apis_playstore)"
+    "$ROOT/hack/screenshots" -s "$serial" --setup-only
+fi
+read -r width height < <(adb shell wm size | sed -nE 's/.*: ([0-9]+)x([0-9]+)/\1 \2/p' | tail -1)
+[[ -n $width && -n $height ]] || die "could not read display dimensions"
+density=$(adb shell wm density | sed -nE 's/.*density: ([0-9]+).*/\1/p' | tail -1)
+work=$(mktemp -d)
+record_pid=""
+demo_before=$(adb shell settings get global sysui_demo_allowed | tr -d '\r')
+cleanup() {
+    if [[ -n $record_pid ]]; then
+        adb shell pkill -INT screenrecord >/dev/null 2>&1 || true
+        wait "$record_pid" 2>/dev/null || true
+    fi
+    adb shell am broadcast -a com.android.systemui.demo -e command exit >/dev/null 2>&1 || true
+    if [[ $demo_before == null ]]; then
+        adb shell settings delete global sysui_demo_allowed >/dev/null 2>&1 || true
+    else
+        adb shell settings put global sysui_demo_allowed "$demo_before" >/dev/null 2>&1 || true
+    fi
+    adb shell rm -f /sdcard/liseur-promo.mp4 /sdcard/liseur-ui.xml >/dev/null 2>&1 || true
+    rm -rf "$work"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+adb shell settings put global sysui_demo_allowed 1
+for args in 'enter' 'clock -e hhmm 1200' 'notifications -e visible false' \
+    'network -e wifi show -e level 4 -e mobile hide' 'battery -e level 100 -e plugged false'; do
+    # shellcheck disable=SC2086
+    adb shell am broadcast -a com.android.systemui.demo -e command $args >/dev/null
+done
+mkdir -p "$ROOT/promo/public/clips"
+
+record() {
+    local name=$1 seconds=$2
+    shift 2
+    adb shell screenrecord --bit-rate 20000000 --time-limit "$seconds" /sdcard/liseur-promo.mp4 >"$work/record.log" 2>&1 &
+    record_pid=$!
+    sleep 0.4
+    "$@"
+    wait "$record_pid" || { cat "$work/record.log" >&2; die "screenrecord failed"; }
+    record_pid=""
+    adb pull /sdcard/liseur-promo.mp4 "$work/raw.mp4" >/dev/null
+    ffmpeg -v error -y -i "$work/raw.mp4" -an \
+        -vf "setpts=PTS-STARTPTS,tpad=stop_mode=clone:stop_duration=$seconds,fps=30" \
+        -t "$seconds" -c:v libx264 -crf 18 -pix_fmt yuv420p -movflags +faststart "$work/normalized.mp4"
+    local frames
+    frames=$(ffprobe -v error -select_streams v:0 -show_entries stream=nb_frames -of csv=p=0 "$work/normalized.mp4")
+    [[ $frames =~ ^[0-9]+$ ]] && ((frames >= seconds * 30)) || die "screenrecord produced no usable video for $name"
+    mv "$work/normalized.mp4" "$ROOT/promo/public/clips/$name.mp4"
+    note "captured $name"
+}
+page_motion() {
+    sleep 0.4
+    tap 0.85 0.5
+    sleep 1.1
+    tap 0.85 0.5
+}
+shelf_motion() {
+    sleep 0.4
+    adb shell input swipe "$(x 0.5)" "$(y 0.8)" "$(x 0.5)" "$(y 0.28)" 950
+    sleep 0.4
+    adb shell input swipe "$(x 0.5)" "$(y 0.8)" "$(x 0.5)" "$(y 0.28)" 950
+}
+
+if ((!translation_only)) && adb shell "command -v sqlite3" >/dev/null; then
+    adb shell am force-stop "$APP_ID"
+    adb shell "run-as $APP_ID sqlite3 /data/data/$APP_ID/databases/liseur.db \
+        \"UPDATE books SET hidden_at = 1 WHERE url LIKE '%2Fliseur_notes-fixture.epub' OR url LIKE '%2Fliseur_font-size-fixture.epub';\""
+fi
+open_library
+open_settings
+set_switch "Colours from your wallpaper" off
+back
+open_first_book "Moby Dick"
+choose_reading_theme Light
+reader_chrome_down
+if on_screen "Page translated from"; then
+    reader_chrome_up
+    tap_on "Stop translating" exact
+    reader_chrome_down
+fi
+if ((translation_only)); then
+    turn_pages 2
+    adb exec-out screencap -p >"$work/original.png"
+    reader_chrome_up
+    tap_on More exact
+    tap_on "Translate into"
+    reader_chrome_up
+    wait_for "Translated" 90 >/dev/null || die "translation did not start; configure a service and a target language first"
+    for _ in {1..40}; do
+        on_screen "Translating" || break
+        sleep 1
+    done
+    on_screen "Translating" && die "translation did not finish"
+    reader_chrome_down
+    sleep 2
+    adb exec-out screencap -p >"$work/translated.png"
+    cp "$work/original.png" "$ROOT/docs/screenshots/27-translation-original.png"
+    cp "$work/translated.png" "$ROOT/docs/screenshots/27-translation.png"
+    note "captured translation and its original page"
+    exit 0
+fi
+for theme in Light Sepia Dark; do
+    choose_reading_theme "$theme"
+    reader_chrome_down
+    if [[ $theme == Sepia ]]; then
+        adb exec-out screencap -p >"$ROOT/docs/screenshots/28-reading-sepia.png"
+    fi
+    record "reading-${theme,,}" 5 page_motion
+done
+choose_reading_theme Light
+open_library
+open_settings
+if [[ -n $speech_url ]]; then
+    scroll_to "External services and API keys" exact
+    tap_on "External services and API keys" exact
+    speech_host=$(python3 -c 'import sys, urllib.parse; print(urllib.parse.urlsplit(sys.argv[1]).netloc)' "$speech_url")
+    if ! on_screen "$speech_host"; then
+        tap_on "Add server" exact
+        tap_on "http://192.168.1.10:8880" exact
+        adb shell input text "$speech_url"
+        back
+        back
+    fi
+    back
+fi
+scroll_to "Read aloud" exact
+tap_on "Read aloud" exact
+if [[ -n $speech_url ]]; then
+    tap_on "Change the voice service" exact
+    tap_on "$speech_host" contains
+else
+    choose_voice_service "$DEVICE_VOICES"
+fi
+open_library
+open_first_book "Moby Dick"
+start_visible_read_aloud || die "could not select a word to narrate"
+reader_chrome_up
+wait_for "Pause reading aloud" 30 exact >/dev/null || die "no device voice is ready; install one or use --speech-url with Kokoro"
+next_sentence=$(wait_for "Next sentence" 15 exact) || die "no sentence controls appeared"
+next_sentence_motion() {
+    sleep 1
+    # shellcheck disable=SC2086
+    adb shell input tap $next_sentence
+    sleep 1
+    # shellcheck disable=SC2086
+    adb shell input tap $next_sentence
+}
+record read-aloud 9 next_sentence_motion
+tap_on "Stop reading aloud" exact
+open_library
+shelf_to_top
+record library 6 shelf_motion
+printf '\nClips are in promo/public/clips/. Run make promo-video.\n'
