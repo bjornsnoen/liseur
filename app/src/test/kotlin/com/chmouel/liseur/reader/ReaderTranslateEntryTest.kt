@@ -35,9 +35,15 @@ class ReaderTranslateEntryTest {
     }
 
     @Test
-    fun `hidden without translation, for fixed layout, or on a translated page`() {
+    fun `stop translating replaces the translation action on a translated page`() {
+        assertEquals(ReaderTranslateEntry.Stop, entry(translated = true, eligible = true, saved = true))
+        assertEquals(ReaderTranslateEntry.Stop, entry(available = false, translated = true))
+    }
+
+    @Test
+    fun `hidden without translation or for fixed layout`() {
         assertNull(entry(available = false))
         assertNull(entry(reflowable = false))
-        assertNull(entry(translated = true, eligible = true))
+        assertNull(entry(reflowable = false, translated = true))
     }
 }

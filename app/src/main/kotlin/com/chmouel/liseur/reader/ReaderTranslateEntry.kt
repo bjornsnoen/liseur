@@ -12,10 +12,15 @@ internal sealed interface ReaderTranslateEntry {
     /** "Translate book": opens Translation settings, since something has to be set up or chosen first. */
     data class SetUp(override val wholeBook: Boolean) : ReaderTranslateEntry
 
+    /** "Stop translating": restores the book's words and clears its saved translated mode. */
+    data object Stop : ReaderTranslateEntry {
+        override val wholeBook = false
+    }
+
     companion object {
         /**
          * Null hides the item: no translation in this build, a book that
-         * is not reflowable text, or a page already translated.
+         * is not reflowable text.
          */
         fun of(
             available: Boolean,
@@ -25,7 +30,9 @@ internal sealed interface ReaderTranslateEntry {
             wholeBookEligible: Boolean,
             wholeBookSaved: Boolean,
         ): ReaderTranslateEntry? {
-            if (!available || !reflowable || translated) return null
+            if (!reflowable) return null
+            if (translated) return Stop
+            if (!available) return null
             val wholeBook = wholeBookEligible || wholeBookSaved
             return languages?.let { Into(it, wholeBook) } ?: SetUp(wholeBook)
         }

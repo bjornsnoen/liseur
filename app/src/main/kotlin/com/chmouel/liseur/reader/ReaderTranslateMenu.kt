@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.Translate
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
@@ -50,7 +51,9 @@ internal fun ReaderTranslateMenuItem(
             stringResource(R.string.reader_translate_into, Locale.forLanguageTag(target).getDisplayName(uiLocale).ifBlank { target })
         }
         is ReaderTranslateEntry.SetUp -> stringResource(R.string.reader_translate_book)
+        ReaderTranslateEntry.Stop -> stringResource(R.string.translation_page_stop)
     }
+    val icon = if (entry == ReaderTranslateEntry.Stop) Icons.Filled.Close else Icons.Outlined.Translate
     val colors = MenuDefaults.itemColors()
     Row(
         modifier = Modifier
@@ -66,7 +69,7 @@ internal fun ReaderTranslateMenuItem(
     ) {
         CompositionLocalProvider(LocalContentColor provides colors.leadingIconColor) {
             Box(Modifier.defaultMinSize(minWidth = 24.dp)) {
-                Icon(Icons.Outlined.Translate, contentDescription = null)
+                Icon(icon, contentDescription = null)
             }
         }
         Text(

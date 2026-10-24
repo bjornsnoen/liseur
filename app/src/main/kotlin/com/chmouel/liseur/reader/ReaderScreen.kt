@@ -42,6 +42,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.List
+import androidx.compose.material.icons.automirrored.outlined.VolumeOff
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.outlined.BookmarkBorder
@@ -4435,6 +4436,7 @@ internal fun ReaderScreen(
                                                     translateFromHere(entry.languages)
                                                 }
                                                 is ReaderTranslateEntry.SetUp -> translationSettingsOpen = true
+                                                ReaderTranslateEntry.Stop -> stopTranslatingBook()
                                             }
                                         },
                                         onLongClick = {
@@ -4443,7 +4445,19 @@ internal fun ReaderScreen(
                                         },
                                     )
                                 }
-                                readAloudFromHere?.let { action ->
+                                // While this book is read aloud, the item stops it, as the player's close button does.
+                                if (listening != null) {
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.read_aloud_stop)) },
+                                        leadingIcon = {
+                                            Icon(Icons.AutoMirrored.Outlined.VolumeOff, contentDescription = null)
+                                        },
+                                        onClick = {
+                                            moreOpen = false
+                                            readAloudFeature.stop()
+                                        },
+                                    )
+                                } else readAloudFromHere?.let { action ->
                                     DropdownMenuItem(
                                         text = { Text(stringResource(R.string.reader_narrate_from_here)) },
                                         leadingIcon = {
@@ -4466,7 +4480,10 @@ internal fun ReaderScreen(
                                         },
                                     )
                                 }
-                                if (codexEnabled || storyAvailable || translateEntry != null || readAloudFromHere != null || syncable) {
+                                if (
+                                    codexEnabled || storyAvailable || translateEntry != null ||
+                                    listening != null || readAloudFromHere != null || syncable
+                                ) {
                                     HorizontalDivider()
                                 }
                                 DropdownMenuItem(

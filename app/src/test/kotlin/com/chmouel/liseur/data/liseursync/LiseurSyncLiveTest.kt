@@ -91,26 +91,31 @@ class LiseurSyncLiveTest {
     fun `silent response times out but comment heartbeats keep socket alive`() = runBlocking {
         MockWebServer().use { server ->
             server.start(InetAddress.getLoopbackAddress(), 0)
-            val live = LiseurSyncLive({ _, _ -> LiveRefresh() }, idleMillis = 400)
+            // Keep the idle timeout far above the heartbeat interval. The
+            // suite forks one JVM per core, so a short margin lets a GC or
+            // scheduler stall trip the read timeout between comments.
+            val live = LiseurSyncLive({ _, _ -> LiveRefresh() }, idleMillis = 1_000)
             server.enqueue(
                 MockResponse.Builder().addHeader("Content-Type", "text/event-stream")
                     .body("event: invalidate\ndata: {\"topics\":[\"positions\"]}\n\n")
-                    .bodyDelay(1, TimeUnit.SECONDS).build(),
+                    .bodyDelay(4, TimeUnit.SECONDS).build(),
             )
             val silent = runCatching {
-                withTimeout(3_000) { live.stream(server.url("/").toString(), TOKEN).first() }
+                withTimeout(5_000) { live.stream(server.url("/").toString(), TOKEN).first() }
             }.exceptionOrNull()
             assertTrue(silent is LiveStreamFailure)
 
+            // Heartbeats span 40 * 40 ms = 1.6 s, longer than the idle
+            // timeout, so only the comments can keep the socket alive.
             val heartbeat = ": ping\n\n"
             server.enqueue(
                 MockResponse.Builder().addHeader("Content-Type", "text/event-stream")
-                    .body(heartbeat.repeat(16) + "event: invalidate\ndata: {\"topics\":[\"positions\"]}\n\n")
+                    .body(heartbeat.repeat(40) + "event: invalidate\ndata: {\"topics\":[\"positions\"]}\n\n")
                     .throttleBody(heartbeat.length.toLong(), 40, TimeUnit.MILLISECONDS).build(),
             )
             assertEquals(
                 setOf(LiveTopic.POSITIONS),
-                withTimeout(5_000) { live.stream(server.url("/").toString(), TOKEN).first() },
+                withTimeout(10_000) { live.stream(server.url("/").toString(), TOKEN).first() },
             )
         }
     }
