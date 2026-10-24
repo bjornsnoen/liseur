@@ -1,5 +1,6 @@
 package com.chmouel.liseur.reader
 
+import android.view.View
 import android.webkit.WebView
 import com.chmouel.liseur.reader.chrome.attachedWebViews
 import com.chmouel.liseur.reader.chrome.layoutPasses
@@ -20,6 +21,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
@@ -46,6 +48,13 @@ import org.readium.r2.shared.util.Language
  */
 internal object TranslatedPages {
     private const val CSS_SELECTOR = "cssSelector"
+
+    // Readium's publicationView is requireView, which throws once the
+    // fragment's view is gone. A run still following a fragment rebuilt
+    // for a scroll-mode change meets exactly that, so ask for the view it
+    // may no longer have instead.
+    private val EpubNavigatorFragment.publicationViewOrNull: View?
+        get() = view
 
     // A view set aside after it was picked may not answer until shown again; the next layout pass retries.
     private const val ANSWER_MS = 2_000L
@@ -80,7 +89,7 @@ internal object TranslatedPages {
     /** The selected words as the translated page currently shows them. */
     @OptIn(ExperimentalReadiumApi::class)
     suspend fun selectedText(nav: EpubNavigatorFragment): String? {
-        val web = visibleWebView(nav.publicationView) ?: return null
+        val web = visibleWebView(nav.publicationViewOrNull ?: return null) ?: return null
         val url = web.url ?: return null
         val result = try {
             withTimeoutOrNull(ANSWER_MS) {
@@ -96,7 +105,7 @@ internal object TranslatedPages {
 
     @OptIn(ExperimentalReadiumApi::class)
     suspend fun selectionIntersectsAppliedSwap(nav: EpubNavigatorFragment, sentence: PageSentence): Boolean? {
-        val web = visibleWebView(nav.publicationView) ?: return null
+        val web = visibleWebView(nav.publicationViewOrNull ?: return null) ?: return null
         val url = web.url ?: return null
         if (ResourceAddress.canonicalPath(url) != sentence.href) return null
         val result = try {
@@ -160,7 +169,7 @@ internal object TranslatedPages {
         spoken: StateFlow<PageSentence?> = MutableStateFlow(null),
         unmarked: MutableStateFlow<Pair<PageSentence, Locator.Text>?> = MutableStateFlow(null),
     ) {
-        val root = nav.publicationView
+        val root = nav.publicationViewOrNull ?: return
         val id = ++follows
         val sent = WeakHashMap<WebView, Pair<String, Int>>()
         val marked = WeakHashMap<WebView, PageSentence?>()
@@ -236,7 +245,7 @@ internal object TranslatedPages {
     /** Whether the voice's sentence at [locator] is on screen in a translated page, where its translation stands. */
     @OptIn(ExperimentalReadiumApi::class)
     suspend fun isShowing(nav: EpubNavigatorFragment, locator: Locator): Boolean {
-        val web = visibleWebView(nav.publicationView) ?: return false
+        val web = visibleWebView(nav.publicationViewOrNull ?: return false) ?: return false
         val url = web.url ?: return false
         val text = locator.text.highlight?.takeIf { it.isNotBlank() } ?: return false
         val sentence = SpeechKey.sentenceAt(text, locator)
@@ -254,7 +263,7 @@ internal object TranslatedPages {
     suspend fun shownLocator(nav: EpubNavigatorFragment, locator: Locator): Locator? {
         val text = locator.text.highlight?.takeIf { it.isNotBlank() } ?: return null
         val sentence = SpeechKey.sentenceAt(text, locator)
-        val root = nav.publicationView
+        val root = nav.publicationViewOrNull ?: return null
         // A later page of the chapter on screen is in the view on screen.
         val web = (listOfNotNull(visibleWebView(root)) + attachedWebViews(root))
             .firstOrNull { view -> view.url?.let(ResourceAddress::canonicalPath) == sentence.href } ?: return null
@@ -265,7 +274,7 @@ internal object TranslatedPages {
 
     @OptIn(ExperimentalReadiumApi::class)
     private suspend fun measure(nav: EpubNavigatorFragment, run: PageTranslation<Locator>) {
-        val web = visibleWebView(nav.publicationView) ?: return
+        val web = visibleWebView(nav.publicationViewOrNull ?: return) ?: return
         val url = web.url ?: return
         val href = ResourceAddress.canonicalPath(url) ?: return
         val shown = nav.currentLocator.value
@@ -297,7 +306,7 @@ internal object TranslatedPages {
 
     /** Whether the reader has gone past [sentence] on the page shown now; false when it is not there. */
     suspend fun behind(nav: EpubNavigatorFragment, sentence: PageSentence): Boolean {
-        val web = visibleWebView(nav.publicationView) ?: return false
+        val web = visibleWebView(nav.publicationViewOrNull ?: return false) ?: return false
         val url = web.url ?: return false
         if (ResourceAddress.canonicalPath(url) != sentence.href) return false
         val shown = nav.currentLocator.value
@@ -308,7 +317,7 @@ internal object TranslatedPages {
     }
 
     private fun stillShows(nav: EpubNavigatorFragment, web: WebView, url: String) =
-        visibleWebView(nav.publicationView) === web && web.url == url
+        nav.publicationViewOrNull?.let(::visibleWebView) === web && web.url == url
 
     private const val SELECTION_TEXT_SCRIPT =
         "(window.getSelection ? window.getSelection().toString() : '')"
@@ -346,7 +355,7 @@ internal object TranslatedPages {
                 emit(Unit)
             }
         }
-        merge(layoutPasses(nav.publicationView), retries).takeWhile { settle() }.collect {}
+        merge(nav.publicationViewOrNull?.let(::layoutPasses) ?: emptyFlow(), retries).takeWhile { settle() }.collect {}
     }
 
     private suspend fun restoreAttached(touched: MutableSet<WebView>) {
